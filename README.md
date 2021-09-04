@@ -13,8 +13,8 @@ TO MIGRATE
 - [ ] DNS in general
 - [ ] MBTA site hosting and deployment (and the caching proxy)
 - [ ] SSL certs
-- [ ] Terraform backend config (so meta)
+- [X] Terraform backend config (so meta)
 
 TO SET UP
 
-- [ ] Email forwarding module for taking incoming emails without Namecheap
+- [X] Email forwarding module for taking incoming emails without Namecheap
