@@ -22,6 +22,16 @@ resource "aws_route53_record" "incoming_smtp" {
 
 resource "aws_s3_bucket" "maildump" {
   bucket = "${local.namified_domain}-maildump"
+
+  # we don't want to keep around email backups for more than a few weeks
+  lifecycle_rule {
+    id = "delete-old-messages"
+    enabled = true
+
+    expiration {
+      days = 30
+    }
+  }
 }
 
 resource "aws_s3_bucket_policy" "maildump" {
