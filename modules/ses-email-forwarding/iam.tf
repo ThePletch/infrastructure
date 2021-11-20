@@ -32,6 +32,7 @@ data "aws_iam_policy_document" "email_sender" {
     sid = "PullEmailsFromS3"
     actions = [
       "s3:GetObject",
+      "s3:DeleteObject",
     ]
     resources = [
       "${aws_s3_bucket.maildump.arn}/*",
@@ -41,6 +42,7 @@ data "aws_iam_policy_document" "email_sender" {
   statement {
     sid = "SendEmails"
     actions = [
+      "ses:SendEmail",
       "ses:SendRawEmail",
     ]
     resources = [

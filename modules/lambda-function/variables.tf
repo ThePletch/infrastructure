@@ -49,3 +49,7 @@ variable "include_inline_policy" {
   type    = bool
   default = false
 }
+
+variable "error_notifications_email" {
+  type = string
+}

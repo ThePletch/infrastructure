@@ -12,9 +12,13 @@ resource "aws_ses_active_receipt_rule_set" "active" {
 
 resource "aws_ses_receipt_rule" "dump_to_s3_and_forward" {
   enabled       = true
+  scan_enabled  = true
   name          = local.receipt_rule_name
   rule_set_name = aws_ses_receipt_rule_set.forwarding_rules.rule_set_name
-  recipients    = [for email in var.email_addresses_to_intercept : "${email}@${var.incoming_domain}"]
+  recipients    = [
+    var.incoming_domain,
+    ".${var.incoming_domain}"
+  ]
 
   s3_action {
     bucket_name       = aws_s3_bucket.maildump.bucket

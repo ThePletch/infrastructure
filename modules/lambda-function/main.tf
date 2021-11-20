@@ -20,6 +20,10 @@ resource "aws_lambda_function" "function" {
   role             = aws_iam_role.function_role.arn
   handler          = coalesce(var.handler, "${local.source_filename_no_ext}.${var.handler_function_name}")
 
+  dead_letter_config {
+    target_arn = aws_sqs_queue.dead_letters.arn
+  }
+
   # only set up the environment block if there are any environment variables specified
   dynamic "environment" {
     for_each = length(var.environment_config) > 0 ? [1] : []

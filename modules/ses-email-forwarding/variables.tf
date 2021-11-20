@@ -11,10 +11,6 @@ variable "forwarder_email" {
   type = string
 }
 
-variable "email_addresses_to_intercept" {
-  type = list(string)
-}
-
 variable "forward_destination" {
   type = string
 }

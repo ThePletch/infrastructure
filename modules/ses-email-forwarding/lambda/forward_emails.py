@@ -17,9 +17,14 @@ import re
 from botocore.exceptions import ClientError
 
 region = os.environ['Region']
+sender = os.environ['MailSender']
+recipient = os.environ['MailRecipient']
+
+client_s3 = boto3.client("s3")
+client_ses = boto3.client('ses', region)
 
 
-def get_message_from_s3(message_id):
+def get_message_s3_path(message_id):
     incoming_email_bucket = os.environ['MailS3Bucket']
     incoming_email_prefix = os.environ['MailS3Prefix']
 
@@ -28,17 +33,16 @@ def get_message_from_s3(message_id):
     else:
         object_path = message_id
 
-    # Create a new S3 client.
-    client_s3 = boto3.client("s3")
-
     # Get the email object from the S3 bucket.
-    object_s3 = client_s3.get_object(
-        Bucket=incoming_email_bucket,
-        Key=object_path)
-    # Read the content of the message.
-    msg_file = object_s3['Body'].read()
+    return {
+        'Bucket': incoming_email_bucket,
+        'Key': object_path,
+    }
 
-    return msg_file
+
+def get_message_from_s3(message_id):
+    # Read the content of the message.
+    return client_s3.get_object(**get_message_s3_path(message_id))['Body'].read()
 
 
 def rewrite_forwarder(email_from):
@@ -49,9 +53,6 @@ def rewrite_forwarder(email_from):
 
 
 def create_message(email_info, msg_file):
-    sender = os.environ['MailSender']
-    recipient = os.environ['MailRecipient']
-
     # Parse the email body.
     mailobject = email.message_from_string(msg_file.decode('utf-8'))
 
@@ -61,6 +62,11 @@ def create_message(email_info, msg_file):
         for from_email
         in email_info['mail']['commonHeaders']['from']
     ]))
+
+    if 'sender' in email_info['mail']['commonHeaders']:
+        mailobject.replace_header('Sender', rewrite_forwarder(email_info['mail']['commonHeaders']['sender']))
+
+    del mailobject['DKIM-Signature']
 
     mailobject.replace_header('Return-Path', rewrite_forwarder(email_info['mail']['commonHeaders']['returnPath']))
 
@@ -75,9 +81,6 @@ def create_message(email_info, msg_file):
 
 
 def send_email(message):
-    # Create a new SES client.
-    client_ses = boto3.client('ses', region)
-
     # Send the email.
     try:
         # Provide the contents of the email.
@@ -86,11 +89,10 @@ def send_email(message):
     # Display an error if something goes wrong.
     except ClientError as e:
         print(f"ERROR! {e.response['Error']['Message']}")
+        print(message)
         raise e
 
-    output = "Email sent! Message ID: " + response['MessageId']
-
-    return output
+    return "Email sent! Message ID: " + response['MessageId']
 
 
 def is_spam(email_info):
@@ -113,6 +115,22 @@ def lambda_handler(event, context):
     print(f"Received message ID {message_id}")
     if is_spam(email_info):
         print("Rejecting identified spam/virus email.")
+        client_ses.send_email(
+            Source=sender,
+            Destination={
+                'ToAddresses': [recipient],
+            },
+            Message={
+                'Subject': {
+                    'Data': f"Rejected spam/virus email from {email_info['mail']['commonHeaders']['from'][0]}",
+                },
+                'Body': {
+                    'Text': {
+                        'Data': f"Rejected subject: {email_info['mail']['commonHeaders']['subject']}\nID: {message_id}"
+                    }
+                }
+            }
+        )
         return
 
     # Retrieve the file from the S3 bucket.
@@ -123,4 +141,8 @@ def lambda_handler(event, context):
 
     # Send the email and print the result.
     result = send_email(message)
+
+    # if we get here, the email was sent successfully, so we'll blow away the raw email from S3.
+    client_s3.delete_object(**get_message_s3_path(message_id))
+
     print(result)

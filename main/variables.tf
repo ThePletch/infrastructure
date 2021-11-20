@@ -11,13 +11,8 @@ variable "aws_credentials_profile" {
   type = string
 }
 
-variable "personal_email" {
+variable "forwarder_email" {
   description = "Email for me. Do not include domain - domain is the base domain above."
-  type        = string
-}
-
-variable "robots_email" {
-  description = "Email to give to newsletters and forms, for filtering. Do not include domain."
   type        = string
 }
 
