@@ -13,7 +13,7 @@
 import os
 import boto3
 import email
-import re
+from email.utils import parseaddr, formataddr
 from botocore.exceptions import ClientError
 
 region = os.environ['Region']
@@ -46,10 +46,15 @@ def get_message_from_s3(message_id):
 
 
 def rewrite_forwarder(email_from):
-    if '<' in email_from:
-        return re.sub(r"<[^>]*>", f"<{os.environ['MailSender']}>", email_from)
+    alias, address = parseaddr(email_from)
+    if alias != '':
+        result = formataddr((alias, os.environ['MailSender']))
     else:
-        return email_from + f" <{os.environ['MailSender']}>"
+        result = formataddr((address, os.environ['MailSender']))
+
+    print(email_from)
+    print(result)
+    return result
 
 
 def create_message(email_info, msg_file):

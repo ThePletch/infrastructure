@@ -9,7 +9,6 @@ If you're reading this to try and find vulnerabilities in my application config,
 TO MIGRATE
 
 - [ ] Personal static site bucket and deployment config
-- [ ] Parties site config (and eventually serverless config)
 - [ ] DNS in general
 - [ ] MBTA site hosting and deployment (and the caching proxy)
 - [ ] SSL certs
@@ -17,4 +16,4 @@ TO MIGRATE
 
 TO SET UP
 
-- [X] Email forwarding module for taking incoming emails without Namecheap
+- [X] Email forwarding module for taking incoming emails to my personal domain
