@@ -15,7 +15,7 @@ resource "aws_ses_receipt_rule" "dump_to_s3_and_forward" {
   scan_enabled  = true
   name          = local.receipt_rule_name
   rule_set_name = aws_ses_receipt_rule_set.forwarding_rules.rule_set_name
-  recipients    = [
+  recipients = [
     var.incoming_domain,
     ".${var.incoming_domain}"
   ]

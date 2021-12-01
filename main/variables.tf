@@ -20,3 +20,8 @@ variable "destination_email" {
   description = "Email to forward all intercepted emails to. Include domain."
   type        = string
 }
+
+variable "parties_domain" {
+  description = "Domain for the parties app"
+  type        = string
+}

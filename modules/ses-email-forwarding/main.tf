@@ -36,7 +36,7 @@ module "forwarder" {
   source_code_file          = "${path.module}/lambda/forward_emails.py"
   function_runtime          = "python3.9"
   include_inline_policy     = true
-  publish = true
+  publish                   = true
   error_notifications_email = var.forward_destination
   iam_policy                = data.aws_iam_policy_document.email_sender.json
 
