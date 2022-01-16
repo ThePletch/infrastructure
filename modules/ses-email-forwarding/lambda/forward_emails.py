@@ -48,12 +48,10 @@ def get_message_from_s3(message_id):
 def rewrite_forwarder(email_from):
     alias, address = parseaddr(email_from)
     if alias != '':
-        result = formataddr((alias, os.environ['MailSender']))
+        result = f"{alias} <{os.environ['MailSender']}>"
     else:
-        result = formataddr((address, os.environ['MailSender']))
+        result = f"{address} <{os.environ['MailSender']}>"
 
-    print(email_from)
-    print(result)
     return result
 
 
