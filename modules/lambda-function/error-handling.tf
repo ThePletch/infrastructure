@@ -26,6 +26,9 @@ resource "aws_cloudwatch_metric_alarm" "error_detection" {
   statistic           = "Sum"
   evaluation_periods  = 1
   period              = 60
+  treat_missing_data  = var.missing_data_alarm_behavior
+  datapoints_to_alarm = var.min_alarm_datapoints
+
 
   dimensions = {
     FunctionName = aws_lambda_function.function.function_name

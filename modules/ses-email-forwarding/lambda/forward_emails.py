@@ -11,9 +11,11 @@
 # language governing permissions and limitations under the License.
 
 import os
-import boto3
 import email
-from email.utils import parseaddr, formataddr
+from email.utils import parseaddr
+import logging
+
+import boto3
 from botocore.exceptions import ClientError
 
 region = os.environ['Region']
@@ -56,30 +58,34 @@ def rewrite_forwarder(email_from):
 
 
 def create_message(email_info, msg_file):
+    common_header_replacements = {
+        'Sender': 'sender',
+        'Return-Path': 'returnPath',
+    }
+
     # Parse the email body.
-    mailobject = email.message_from_string(msg_file.decode('utf-8'))
+    mail_object = email.message_from_string(msg_file.decode('utf-8'))
 
     # Add subject, from and to lines.
-    mailobject.replace_header('From', ";".join([
+    mail_object.replace_header('From', ";".join([
         rewrite_forwarder(from_email)
         for from_email
         in email_info['mail']['commonHeaders']['from']
     ]))
 
-    if 'sender' in email_info['mail']['commonHeaders']:
-        mailobject.replace_header('Sender', rewrite_forwarder(email_info['mail']['commonHeaders']['sender']))
+    for real_header, common_header in common_header_replacements:
+        if common_header in email_info['mail']['commonHeaders']:
+            mail_object.replace_header(real_header, rewrite_forwarder(email_info['mail']['commonHeaders'][common_header]))
 
-    del mailobject['DKIM-Signature']
+    del mail_object['DKIM-Signature']
 
-    mailobject.replace_header('Return-Path', rewrite_forwarder(email_info['mail']['commonHeaders']['returnPath']))
-
-    if 'Reply-To' not in mailobject:
-        mailobject.add_header('Reply-To', email_info['mail']['commonHeaders']['from'][0])
+    if 'Reply-To' not in mail_object:
+        mail_object.add_header('Reply-To', email_info['mail']['commonHeaders']['from'][0])
 
     return {
         "Source": sender,
         "Destinations": [recipient],
-        "RawMessage": {"Data": mailobject.as_string()}
+        "RawMessage": {"Data": mail_object.as_string()}
     }
 
 
@@ -91,8 +97,8 @@ def send_email(message):
 
     # Display an error if something goes wrong.
     except ClientError as e:
-        print(f"ERROR! {e.response['Error']['Message']}")
-        print(message)
+        logging.error(f"Failed to send email: {e.response['Error']['Message']}")
+        logging.debug(message)
         raise e
 
     return "Email sent! Message ID: " + response['MessageId']
@@ -103,49 +109,54 @@ def is_spam(email_info):
 
     for verdict in ('spamVerdict', 'virusVerdict'):
         if verdict in receipt and receipt[verdict]['status'] not in ["PASS", "DISABLED"]:
-            print(f"Failed verdict: {verdict}")
-            print(email_info)
+            logging.info(f"Failed verdict: {verdict}")
+            logging.debug(email_info)
             return True
 
     return False
 
 
 def lambda_handler(event, context):
-    # Get the unique ID of the message. This corresponds to the name of the file
-    # in S3.
-    email_info = event['Records'][0]['ses']
-    message_id = email_info['mail']['messageId']
-    print(f"Received message ID {message_id}")
-    if is_spam(email_info):
-        print("Rejecting identified spam/virus email.")
-        client_ses.send_email(
-            Source=sender,
-            Destination={
-                'ToAddresses': [recipient],
-            },
-            Message={
-                'Subject': {
-                    'Data': f"Rejected spam/virus email from {email_info['mail']['commonHeaders']['from'][0]}",
+    try:
+        # Get the unique ID of the message. This corresponds to the name of the file
+        # in S3.
+        email_info = event['Records'][0]['ses']
+        message_id = email_info['mail']['messageId']
+        logging.info(f"Received message ID {message_id}")
+        if is_spam(email_info):
+            logging.info("Rejecting identified spam/virus email.")
+            client_ses.send_email(
+                Source=sender,
+                Destination={
+                    'ToAddresses': [recipient],
                 },
-                'Body': {
-                    'Text': {
-                        'Data': f"Rejected subject: {email_info['mail']['commonHeaders']['subject']}\nID: {message_id}"
+                Message={
+                    'Subject': {
+                        'Data': f"Rejected spam/virus email from {email_info['mail']['commonHeaders']['from'][0]}",
+                    },
+                    'Body': {
+                        'Text': {
+                            'Data': f"Rejected subject: {email_info['mail']['commonHeaders']['subject']}\nID: {message_id}"
+                        }
                     }
                 }
-            }
-        )
-        return
+            )
+            return
 
-    # Retrieve the file from the S3 bucket.
-    message_file = get_message_from_s3(message_id)
+        # Retrieve the file from the S3 bucket.
+        message_file = get_message_from_s3(message_id)
 
-    # Create the message.
-    message = create_message(email_info, message_file)
+        # Create the message.
+        message = create_message(email_info, message_file)
 
-    # Send the email and print the result.
-    result = send_email(message)
+        # Send the email and print the result.
+        result = send_email(message)
 
-    # if we get here, the email was sent successfully, so we'll blow away the raw email from S3.
-    client_s3.delete_object(**get_message_s3_path(message_id))
+        # if we get here, the email was sent successfully, so we'll blow away the raw email from S3.
+        client_s3.delete_object(**get_message_s3_path(message_id))
 
-    print(result)
+        logging.debug(result)
+    except Exception:
+        logging.debug("Logging complete incoming event for debugging:")
+        logging.error(event)
+        raise
