@@ -18,6 +18,8 @@ import logging
 import boto3
 from botocore.exceptions import ClientError
 
+logging.basicConfig(level=logging.DEBUG)
+
 region = os.environ['Region']
 sender = os.environ['MailSender']
 recipient = os.environ['MailRecipient']
@@ -49,7 +51,7 @@ def get_message_from_s3(message_id):
 
 def rewrite_forwarder(email_from):
     alias, address = parseaddr(email_from)
-    if alias != '':
+    if alias.strip() != '':
         result = f"{alias} <{os.environ['MailSender']}>"
     else:
         result = f"{address} <{os.environ['MailSender']}>"
@@ -73,7 +75,7 @@ def create_message(email_info, msg_file):
         in email_info['mail']['commonHeaders']['from']
     ]))
 
-    for real_header, common_header in common_header_replacements:
+    for real_header, common_header in common_header_replacements.items():
         if common_header in email_info['mail']['commonHeaders']:
             mail_object.replace_header(real_header, rewrite_forwarder(email_info['mail']['commonHeaders'][common_header]))
 
