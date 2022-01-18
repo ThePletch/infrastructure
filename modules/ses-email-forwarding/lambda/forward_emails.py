@@ -1,15 +1,3 @@
-# Copyright 2010-2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-#
-# This file is licensed under the Apache License, Version 2.0 (the "License").
-# You may not use this file except in compliance with the License. A copy of the
-# License is located at
-#
-# http://aws.amazon.com/apache2.0/
-#
-# This file is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS
-# OF ANY KIND, either express or implied. See the License for the specific
-# language governing permissions and limitations under the License.
-
 import os
 import email
 from email.utils import parseaddr
@@ -26,6 +14,10 @@ recipient = os.environ['MailRecipient']
 
 client_s3 = boto3.client("s3")
 client_ses = boto3.client('ses', region)
+
+
+class NonsenseEmailException(Exception):
+    pass
 
 
 def get_message_s3_path(message_id):
@@ -52,19 +44,16 @@ def get_message_from_s3(message_id):
 def rewrite_forwarder(email_from):
     alias, address = parseaddr(email_from)
     if alias.strip() != '':
-        result = f"{alias} <{os.environ['MailSender']}>"
+        result = f"\"{alias}\" <{sender}>"
+    elif address.strip() != '':
+        result = f"{address} <{sender}>"
     else:
-        result = f"{address} <{os.environ['MailSender']}>"
+        result = sender
 
     return result
 
 
 def create_message(email_info, msg_file):
-    common_header_replacements = {
-        'Sender': 'sender',
-        'Return-Path': 'returnPath',
-    }
-
     # Parse the email body.
     mail_object = email.message_from_string(msg_file.decode('utf-8'))
 
@@ -75,9 +64,14 @@ def create_message(email_info, msg_file):
         in email_info['mail']['commonHeaders']['from']
     ]))
 
-    for real_header, common_header in common_header_replacements.items():
-        if common_header in email_info['mail']['commonHeaders']:
-            mail_object.replace_header(real_header, rewrite_forwarder(email_info['mail']['commonHeaders'][common_header]))
+    if 'sender' in email_info['mail']['commonHeaders']:
+        mail_object.replace_header('Sender', rewrite_forwarder(email_info['mail']['commonHeaders']['sender']))
+
+    if 'returnPath' in email_info['mail']['commonHeaders']:
+        mail_object.replace_header('Return-Path', rewrite_forwarder(email_info['mail']['commonHeaders']['returnPath']))
+    elif 'Return-Path' in mail_object and mail_object['Return-Path'] == '<>':
+        # handler for bogus return path that failed to parse in SES
+        del mail_object['Return-Path']
 
     del mail_object['DKIM-Signature']
 
