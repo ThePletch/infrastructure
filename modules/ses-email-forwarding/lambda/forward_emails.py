@@ -56,7 +56,7 @@ def rewrite_forwarder(email_from):
 
 def create_message(email_info, msg_file):
     # Parse the email body.
-    mail_object = email.message_from_string(msg_file, policy=policy.default)
+    mail_object = email.message_from_string(msg_file.decode('utf-8'), policy=policy.default)
 
     # Add subject, from and to lines.
     mail_object.replace_header('From', ";".join([
