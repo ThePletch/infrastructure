@@ -19,7 +19,7 @@ resource "aws_lambda_function" "function" {
   source_code_hash = data.archive_file.deployment_package.output_base64sha256
   role             = aws_iam_role.function_role.arn
   handler          = coalesce(var.handler, "${local.source_filename_no_ext}.${var.handler_function_name}")
-
+  memory_size      = var.memory_mb
   dead_letter_config {
     target_arn = aws_sqs_queue.dead_letters.arn
   }

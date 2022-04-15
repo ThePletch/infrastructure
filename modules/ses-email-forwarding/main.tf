@@ -49,5 +49,6 @@ module "forwarder" {
     Region        = data.aws_region.current.name
   }
 
+  memory_mb = 512
   timeout = 30
 }

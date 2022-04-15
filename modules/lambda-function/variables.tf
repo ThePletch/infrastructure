@@ -69,3 +69,8 @@ variable "missing_data_alarm_behavior" {
     error_message = "Alarm behavior must be a valid value for the aws_cloudwatch_metric_alarm.treat_missing_data field."
   }
 }
+
+variable "memory_mb" {
+  type = number
+  default = 128
+}

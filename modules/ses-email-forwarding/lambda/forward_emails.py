@@ -1,6 +1,6 @@
 import os
 import email
-from email import policy
+import email.policy
 from email.utils import parseaddr
 import logging
 
@@ -56,8 +56,7 @@ def rewrite_forwarder(email_from):
 
 def create_message(email_info, msg_file):
     # Parse the email body.
-    mail_object = email.message_from_string(msg_file.decode('utf-8'), policy=policy.default)
-
+    mail_object = email.message_from_string(msg_file.decode('utf-8'), policy=email.policy.SMTP)
     # Add subject, from and to lines.
     mail_object.replace_header('From', ";".join([
         rewrite_forwarder(from_email)
