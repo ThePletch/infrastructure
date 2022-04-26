@@ -1,6 +1,8 @@
 import os
+from contextlib import contextmanager
 import email
-from email import policy
+from email.parser import BytesFeedParser
+import email.policy
 from email.utils import parseaddr
 import logging
 
@@ -13,8 +15,8 @@ region = os.environ['Region']
 sender = os.environ['MailSender']
 recipient = os.environ['MailRecipient']
 
-client_s3 = boto3.client("s3")
-client_ses = boto3.client('ses', region)
+client_s3 = boto3.client('s3')
+client_ses = boto3.client('sesv2', region)
 
 
 class NonsenseEmailException(Exception):
@@ -37,9 +39,10 @@ def get_message_s3_path(message_id):
     }
 
 
-def get_message_from_s3(message_id):
-    # Read the content of the message.
-    return client_s3.get_object(**get_message_s3_path(message_id))['Body'].read()
+@contextmanager
+def with_message_from_s3(message_id):
+    # Read the content of the message to a temp file, return file pointer
+    yield client_s3.get_object(**get_message_s3_path(message_id))['Body']
 
 
 def rewrite_forwarder(email_from):
@@ -54,16 +57,23 @@ def rewrite_forwarder(email_from):
     return result
 
 
-def create_message(email_info, msg_file):
+def create_message(email_info, msg_stream):
     # Parse the email body.
-    mail_object = email.message_from_string(msg_file.decode('utf-8'), policy=policy.default)
-
+    parser = BytesFeedParser(policy=email.policy.SMTPUTF8.clone(refold_source='none'))
+    try:
+        while chunk := msg_stream.next():
+            parser.feed(chunk)
+    except StopIteration:
+        pass
+    mail_object = parser.close()
     # Add subject, from and to lines.
     mail_object.replace_header('From', ";".join([
         rewrite_forwarder(from_email)
         for from_email
         in email_info['mail']['commonHeaders']['from']
     ]))
+
+    base_from = rewrite_forwarder(email_info['mail']['commonHeaders']['from'][0])
 
     if 'sender' in email_info['mail']['commonHeaders']:
         mail_object.replace_header('Sender', rewrite_forwarder(email_info['mail']['commonHeaders']['sender']))
@@ -80,9 +90,13 @@ def create_message(email_info, msg_file):
         mail_object.add_header('Reply-To', email_info['mail']['commonHeaders']['from'][0])
 
     return {
-        "Source": sender,
-        "Destinations": [recipient],
-        "RawMessage": {"Data": mail_object.as_string()}
+        "FromEmailAddress": base_from,
+        "Destination": {
+            'ToAddresses': [recipient],
+        },
+        "Content": {
+            'Raw': {"Data": mail_object.as_string()}
+        },
     }
 
 
@@ -90,12 +104,14 @@ def send_email(message):
     # Send the email.
     try:
         # Provide the contents of the email.
-        response = client_ses.send_raw_email(**message)
+        response = client_ses.send_email(**message)
 
     # Display an error if something goes wrong.
     except ClientError as e:
         logging.error(f"Failed to send email: {e.response['Error']['Message']}")
-        logging.debug(message)
+        logging.warning(e.response)
+        logging.warning(message)
+
         raise e
 
     return "Email sent! Message ID: " + response['MessageId']
@@ -123,17 +139,19 @@ def lambda_handler(event, context):
         if is_spam(email_info):
             logging.info("Rejecting identified spam/virus email.")
             client_ses.send_email(
-                Source=sender,
+                FromEmailAddress=sender,
                 Destination={
                     'ToAddresses': [recipient],
                 },
-                Message={
-                    'Subject': {
-                        'Data': f"Rejected spam/virus email from {email_info['mail']['commonHeaders']['from'][0]}",
-                    },
-                    'Body': {
-                        'Text': {
-                            'Data': f"Rejected subject: {email_info['mail']['commonHeaders']['subject']}\nID: {message_id}"
+                Content={
+                    'Simple': {
+                        'Subject': {
+                            'Data': f"Rejected spam/virus email from {email_info['mail']['commonHeaders']['from'][0]}",
+                        },
+                        'Body': {
+                            'Text': {
+                                'Data': f"Rejected subject: {email_info['mail']['commonHeaders']['subject']}\nID: {message_id}"
+                            }
                         }
                     }
                 }
@@ -141,10 +159,9 @@ def lambda_handler(event, context):
             return
 
         # Retrieve the file from the S3 bucket.
-        message_file = get_message_from_s3(message_id)
-
-        # Create the message.
-        message = create_message(email_info, message_file)
+        with with_message_from_s3(message_id) as message_stream:
+            # Create the message.
+            message = create_message(email_info, message_stream)
 
         # Send the email and print the result.
         result = send_email(message)
