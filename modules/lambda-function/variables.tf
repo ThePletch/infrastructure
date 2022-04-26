@@ -71,6 +71,6 @@ variable "missing_data_alarm_behavior" {
 }
 
 variable "memory_mb" {
-  type = number
+  type    = number
   default = 128
 }
