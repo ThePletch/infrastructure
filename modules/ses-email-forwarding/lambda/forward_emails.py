@@ -48,7 +48,8 @@ def with_message_from_s3(message_id):
 def rewrite_forwarder(email_from):
     alias, address = parseaddr(email_from)
     if alias.strip() != '':
-        result = f"\"{alias}\" <{sender}>"
+        quote_escaped_alias = alias.replace("\"", "\\\"")
+        result = f"\"{quote_escaped_alias}\" <{sender}>"
     elif address.strip() != '':
         result = f"{address} <{sender}>"
     else:
