@@ -8,8 +8,8 @@ If you're reading this to try and find vulnerabilities in my application config,
 
 TO MIGRATE
 
-- [ ] Personal static site bucket and deployment config
-- [ ] DNS in general
+- [X] Personal static site bucket and deployment config
+- [X] DNS in general
 - [ ] MBTA site hosting and deployment (and the caching proxy)
 - [ ] SSL certs
 - [X] Terraform backend config (so meta)
