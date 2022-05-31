@@ -25,3 +25,10 @@ variable "parties_domain" {
   description = "Domain for the parties app"
   type        = string
 }
+
+variable "personal_site" {
+  type = object({
+    main_domain = string
+    aliases     = list(string)
+  })
+}
