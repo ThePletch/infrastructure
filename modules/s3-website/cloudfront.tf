@@ -11,8 +11,19 @@ locals {
 
 resource "aws_cloudfront_distribution" "website_cdn" {
   origin {
-    domain_name = aws_s3_bucket.main.bucket_regional_domain_name
+    # We use the website endpoint instead of the bucket domain
+    # to make cloudfront treat it like a website instead of a bucket.
+    # This lets us do things like serve `index.html` as the default document
+    # for subfolders.
+    domain_name = aws_s3_bucket_website_configuration.main.website_endpoint
     origin_id   = local.cloudfront_origin
+
+    custom_origin_config {
+      https_port = 443
+      http_port = 80
+      origin_protocol_policy = "http-only"
+      origin_ssl_protocols = ["SSLv3", "TLSv1", "TLSv1.1", "TLSv1.2"]
+    }
   }
 
   viewer_certificate {
@@ -49,7 +60,6 @@ resource "aws_cloudfront_distribution" "website_cdn" {
 
   enabled             = true
   is_ipv6_enabled     = true
-  default_root_object = var.index_document
   aliases             = concat([var.domain_name], var.aliases)
 
   tags = {

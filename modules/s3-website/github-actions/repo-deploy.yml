@@ -1,0 +1,37 @@
+# Build site using Zola and Deploy to Cloudflare Workers
+# Configure the listed secret values to deploy.
+# The IAM user associated with the access key should ONLY have the following permissions,
+# scoped to the bucket and its objects:
+# * s3:DeleteObject
+# * s3:GetObject
+# * s3:ListBucket
+# * s3:PutObject
+# * cloudfront invalidation permissions
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install and Run Zola
+        run: |
+          sudo snap install --edge zola
+          zola build
+      - name: Deploy to hosting S3 bucket
+        uses: reggionick/s3-deploy@v3
+        with:
+          folder: public
+          bucket: ${{ secrets.S3_BUCKET }}
+          bucket-region: us-east-2
+          dist-id: ${{ secrets.CLOUDFRONT_CDN_ID }}
+          invalidation: '/*'
+          delete-removed: true
