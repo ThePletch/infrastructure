@@ -60,7 +60,6 @@ resource "aws_cloudfront_distribution" "website_cdn" {
 
   enabled             = true
   is_ipv6_enabled     = true
-  # default_root_object = var.index_document
   aliases             = concat([var.domain_name], var.aliases)
 
   tags = {
