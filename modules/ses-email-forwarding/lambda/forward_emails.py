@@ -4,17 +4,28 @@ import email
 from email.parser import BytesFeedParser
 import email.policy
 from email.utils import parseaddr
+from itertools import chain
 import logging
 
 import boto3
 from botocore.exceptions import ClientError
 
-logging.basicConfig(level=logging.DEBUG)
+logging.getLogger().setLevel(logging.INFO)
 
 region = os.environ['Region']
 sender = os.environ['MailSender']
-recipient = os.environ['MailRecipient']
+incoming_email_bucket = os.environ['MailS3Bucket']
+incoming_email_prefix = os.environ['MailS3Prefix']
+forwarding_config_prefix = os.environ['ForwardingConfigPrefix']
 
+sender_domain = sender.split('@')[1]
+
+explicits_prefix = forwarding_config_prefix + '/inboxes'
+prefixes_prefix = forwarding_config_prefix + '/inbox-prefixes'
+catch_all_path = forwarding_config_prefix + '/catch-all'
+
+
+client_ssm = boto3.client('ssm')
 client_s3 = boto3.client('s3')
 client_ses = boto3.client('sesv2', region)
 
@@ -23,9 +34,63 @@ class NonsenseEmailException(Exception):
     pass
 
 
+def get_param_config(prefix):
+    params = client_ssm.get_parameters_by_path(Path=prefix)
+
+    return {
+        param['Name'].removeprefix(prefix).lstrip('/'): param['Value'].split(',')
+        for param
+        in params['Parameters']
+    }
+
+
+class DestinationFinder:
+    prefixes: dict[str, list[str]]
+    inboxes: dict[str, list[str]]
+    catch_all: list[str]
+
+    def __init__(self):
+        catch_all = client_ssm.get_parameter(Name=catch_all_path)
+        self.catch_all = catch_all['Parameter']['Value'].split(',')
+
+        self.prefixes = get_param_config(prefixes_prefix)
+        self.inboxes = get_param_config(explicits_prefix)
+        logging.info("Exact matches loaded: " + repr(self.inboxes))
+        logging.info("Prefixes loaded: " + repr(self.prefixes))
+
+    def _get_individual_destination(self, inbox):
+        exact_match = self.inboxes.get(inbox, [])
+
+        prefix_matches = [
+            prefix_inboxes
+            for prefix, prefix_inboxes
+            in self.prefixes.items()
+            if inbox.startswith(prefix)
+        ]
+
+        destinations = list(chain(exact_match, *prefix_matches))
+
+        logging.info(f"Destinations for {inbox}: " + ", ".join(destinations))
+
+        return destinations
+
+    def get_destinations(self, recipients):
+        destination_sets = [
+            self._get_individual_destination(recipient.removesuffix('@' + sender_domain))
+            for recipient in recipients
+            if DestinationFinder.email_is_for_target_domain(recipient)
+        ]
+
+        destinations = set(list(chain(*destination_sets)))
+
+        return self.catch_all if len(destinations) == 0 else list(destinations)
+
+    @staticmethod
+    def email_is_for_target_domain(email):
+        return email.endswith(sender_domain)
+
+
 def get_message_s3_path(message_id):
-    incoming_email_bucket = os.environ['MailS3Bucket']
-    incoming_email_prefix = os.environ['MailS3Prefix']
 
     if incoming_email_prefix:
         object_path = (incoming_email_prefix + "/" + message_id)
@@ -58,7 +123,7 @@ def rewrite_forwarder(email_from):
     return result
 
 
-def create_message(email_info, msg_stream):
+def create_message(email_info, msg_stream, destination_finder):
     # Parse the email body.
     parser = BytesFeedParser(policy=email.policy.SMTPUTF8.clone(refold_source='none'))
     try:
@@ -90,10 +155,14 @@ def create_message(email_info, msg_stream):
     if 'Reply-To' not in mail_object:
         mail_object.add_header('Reply-To', email_info['mail']['commonHeaders']['from'][0])
 
+    logging.info("Finding destinations for original target(s): " + ", ".join(email_info['mail']['commonHeaders']['to']))
+    recipients = destination_finder.get_destinations(email_info['mail']['commonHeaders']['to'])
+
+    logging.info("Sending email to addresses: " + ", ".join(recipients))
     return {
         "FromEmailAddress": base_from,
         "Destination": {
-            'ToAddresses': [recipient],
+            'ToAddresses': recipients,
         },
         "Content": {
             'Raw': {"Data": mail_object.as_string()}
@@ -132,6 +201,7 @@ def is_spam(email_info):
 
 def lambda_handler(event, context):
     try:
+        destination_finder = DestinationFinder()
         # Get the unique ID of the message. This corresponds to the name of the file
         # in S3.
         email_info = event['Records'][0]['ses']
@@ -142,7 +212,7 @@ def lambda_handler(event, context):
             client_ses.send_email(
                 FromEmailAddress=sender,
                 Destination={
-                    'ToAddresses': [recipient],
+                    'ToAddresses': destination_finder.catch_all,
                 },
                 Content={
                     'Simple': {
@@ -162,7 +232,7 @@ def lambda_handler(event, context):
         # Retrieve the file from the S3 bucket.
         with with_message_from_s3(message_id) as message_stream:
             # Create the message.
-            message = create_message(email_info, message_stream)
+            message = create_message(email_info, message_stream, destination_finder)
 
         # Send the email and print the result.
         result = send_email(message)

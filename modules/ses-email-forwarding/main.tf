@@ -37,15 +37,15 @@ module "forwarder" {
   function_runtime            = "python3.9"
   include_inline_policy       = true
   publish                     = true
-  error_notifications_email   = var.forward_destination
+  error_notifications_email   = var.catch_all_destinations[0]
   iam_policy                  = data.aws_iam_policy_document.email_sender.json
   missing_data_alarm_behavior = "notBreaching"
 
   environment_config = {
+    ForwardingConfigPrefix = local.parameter_path_prefix
     MailS3Bucket  = aws_s3_bucket.maildump.bucket
     MailS3Prefix  = var.bucket_prefix
     MailSender    = var.forwarder_email
-    MailRecipient = var.forward_destination
     Region        = data.aws_region.current.name
   }
 
