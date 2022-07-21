@@ -12,13 +12,20 @@ variable "aws_credentials_profile" {
 }
 
 variable "forwarder_email" {
-  description = "Email for me. Do not include domain - domain is the base domain above."
+  description = <<DESC
+    Email used as 'from' address for forwarded email.
+    Do not include domain - domain is the base domain above.
+  DESC
   type        = string
 }
 
-variable "destination_email" {
-  description = "Email to forward all intercepted emails to. Include domain."
-  type        = string
+variable "forwarding_config" {
+  description = "Config for email forwarder. See variables.tf in ses-email-forwarding for more."
+  type = object({
+    prefix_mapping = map(list(string))
+    exact_mapping  = map(list(string))
+    catch_all      = list(string)
+  })
 }
 
 variable "parties_domain" {

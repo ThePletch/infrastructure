@@ -13,5 +13,7 @@ module "email_forwarder" {
   source              = "../modules/ses-email-forwarding"
   incoming_domain     = var.base_domain
   forwarder_email     = "${var.forwarder_email}@${var.base_domain}"
-  forward_destination = var.destination_email
+  catch_all_destinations = var.forwarding_config.catch_all
+  inbox_destinations = var.forwarding_config.exact_mapping
+  inbox_prefix_destinations = var.forwarding_config.prefix_mapping
 }

@@ -40,6 +40,17 @@ data "aws_iam_policy_document" "email_sender" {
   }
 
   statement {
+    sid = "GetForwardingConfig"
+    actions = [
+      "ssm:GetParameter",
+      "ssm:GetParametersByPath",
+    ]
+    resources = [
+      "arn:aws:ssm:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:parameter/${trim(local.parameter_path_prefix, "/")}/*"
+    ]
+  }
+
+  statement {
     sid = "SendEmails"
     actions = [
       "ses:SendEmail",
