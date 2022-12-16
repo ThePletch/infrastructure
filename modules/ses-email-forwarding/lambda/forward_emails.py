@@ -16,6 +16,7 @@ region = os.environ['Region']
 sender = os.environ['MailSender']
 incoming_email_bucket = os.environ['MailS3Bucket']
 incoming_email_prefix = os.environ['MailS3Prefix']
+spam_email_prefix = incoming_email_prefix + '/spam'
 forwarding_config_prefix = os.environ['ForwardingConfigPrefix']
 
 sender_domain = sender.split('@')[1]
@@ -90,10 +91,9 @@ class DestinationFinder:
         return email.endswith(sender_domain)
 
 
-def get_message_s3_path(message_id):
-
-    if incoming_email_prefix:
-        object_path = (incoming_email_prefix + "/" + message_id)
+def get_message_s3_path(message_id, prefix):
+    if prefix:
+        object_path = (prefix + "/" + message_id)
     else:
         object_path = message_id
 
@@ -107,7 +107,7 @@ def get_message_s3_path(message_id):
 @contextmanager
 def with_message_from_s3(message_id):
     # Read the content of the message to a temp file, return file pointer
-    yield client_s3.get_object(**get_message_s3_path(message_id))['Body']
+    yield client_s3.get_object(**get_message_s3_path(message_id, incoming_email_prefix))['Body']
 
 
 def rewrite_forwarder(email_from):
@@ -155,8 +155,10 @@ def create_message(email_info, msg_stream, destination_finder):
     if 'Reply-To' not in mail_object:
         mail_object.add_header('Reply-To', email_info['mail']['commonHeaders']['from'][0])
 
-    logging.info("Finding destinations for original target(s): " + ", ".join(email_info['mail']['commonHeaders']['to']))
-    recipients = destination_finder.get_destinations(email_info['mail']['commonHeaders']['to'])
+    to_header = email_info['mail']['commonHeaders'].get('to') or []
+    to_header_str = ", ".join(to_header) or '[no recipient]'
+    logging.info("Finding destinations for original target(s): " + to_header_str)
+    recipients = destination_finder.get_destinations(to_header)
 
     logging.info("Sending email to addresses: " + ", ".join(recipients))
     return {
@@ -227,6 +229,11 @@ def lambda_handler(event, context):
                     }
                 }
             )
+            logging.info("Moving email payload to spam directory for cleanup")
+            message_path = get_message_s3_path(message_id, incoming_email_prefix)
+            spam_path = get_message_s3_path(message_id, spam_email_prefix)
+            client_s3.copy_object(**spam_path, CopySource=message_path)
+            client_s3.delete_object(message_path)
             return
 
         # Retrieve the file from the S3 bucket.
@@ -238,7 +245,7 @@ def lambda_handler(event, context):
         result = send_email(message)
 
         # if we get here, the email was sent successfully, so we'll blow away the raw email from S3.
-        client_s3.delete_object(**get_message_s3_path(message_id))
+        client_s3.delete_object(**get_message_s3_path(message_id, incoming_email_prefix))
 
         logging.debug(result)
     except Exception:
