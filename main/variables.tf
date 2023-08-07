@@ -9,6 +9,7 @@ variable "aws_region" {
 
 variable "aws_credentials_profile" {
   type = string
+  default = "personal"
 }
 
 variable "forwarder_email" {

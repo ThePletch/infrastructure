@@ -20,10 +20,10 @@ forwarding_config_prefix = os.environ['ForwardingConfigPrefix']
 
 sender_domain = sender.split('@')[1]
 
+# prefixes in AWS SSM where forwarding config is recorded
 explicits_prefix = forwarding_config_prefix + '/inboxes'
 prefixes_prefix = forwarding_config_prefix + '/inbox-prefixes'
 catch_all_path = forwarding_config_prefix + '/catch-all'
-
 
 client_ssm = boto3.client('ssm')
 client_s3 = boto3.client('s3')
@@ -91,7 +91,6 @@ class DestinationFinder:
 
 
 def get_message_s3_path(message_id):
-
     if incoming_email_prefix:
         object_path = (incoming_email_prefix + "/" + message_id)
     else:
@@ -105,12 +104,12 @@ def get_message_s3_path(message_id):
 
 
 @contextmanager
-def with_message_from_s3(message_id):
+def with_message_from_s3(message_id: str):
     # Read the content of the message to a temp file, return file pointer
     yield client_s3.get_object(**get_message_s3_path(message_id))['Body']
 
 
-def rewrite_forwarder(email_from):
+def rewrite_forwarder(email_from: str):
     alias, address = parseaddr(email_from)
     if alias.strip() != '':
         quote_escaped_alias = alias.replace("\"", "\\\"")
@@ -124,7 +123,8 @@ def rewrite_forwarder(email_from):
 
 
 def create_message(email_info, msg_stream, destination_finder):
-    # Parse the email body.
+    # Parse the email body. We unfortunately can't identify/eliminate defects during parsing,
+    # e.g. header limits specified in the policy will be ignored.
     parser = BytesFeedParser(policy=email.policy.SMTPUTF8.clone(refold_source='none'))
     try:
         while chunk := msg_stream.next():
@@ -139,6 +139,16 @@ def create_message(email_info, msg_stream, destination_finder):
         in email_info['mail']['commonHeaders']['from']
     ]))
 
+    """
+    MIME-Version: 1.0; is the only currently valid MIME-Version header.
+    Many, many email clients will automatically append this header for standards compliance,
+    but unfortunately many of them don't check if it's already there.
+    Several SMTP servers (including AWS SES!) will reject emails with multiple MIME-Version headers,
+    so we take care of normalizing this to exactly one copy ourselves.
+    """
+    del mail_object['MIME-Version']
+    mail_object.add_header('MIME-Version', '1.0')
+
     base_from = rewrite_forwarder(email_info['mail']['commonHeaders']['from'][0])
 
     if 'sender' in email_info['mail']['commonHeaders']:
@@ -152,7 +162,11 @@ def create_message(email_info, msg_stream, destination_finder):
 
     del mail_object['DKIM-Signature']
 
-    if 'Reply-To' not in mail_object:
+    if 'Reply-To' in mail_object and mail_object['Reply-To'].count('@') != 1:
+        logging.warning("Replacing invalid Reply-To email address with original sender email.")
+        # as always, this is a handler for a nonsense email i received with an invalid reply-to address
+        mail_object.replace_header('Reply-To', email_info['mail']['commonHeaders']['from'][0])
+    elif 'Reply-To' not in mail_object:
         mail_object.add_header('Reply-To', email_info['mail']['commonHeaders']['from'][0])
 
     logging.info("Finding destinations for original target(s): " + ", ".join(email_info['mail']['commonHeaders']['to']))
@@ -199,16 +213,52 @@ def is_spam(email_info):
     return False
 
 
+# Send a bare-bones email in the event that we either cannot or will not forward the triggering
+# email, e.g. it was identified as spam or we encountered an error
+def send_fallback_email(message_id, original_sender, recipient, reason, original_subject):
+    client_ses.send_email(
+        FromEmailAddress=sender,
+        Destination={
+            'ToAddresses': recipient,
+        },
+        Content={
+            'Simple': {
+                'Subject': {
+                    'Data': f"Rejected email from {original_sender} ({reason})",
+                },
+                'Body': {
+                    'Text': {
+                        'Data': f"Rejected subject: {original_subject}\nID: {message_id}"
+                    }
+                }
+            }
+        }
+    )
+
+
 def lambda_handler(event, context):
+    # Get the unique ID of the message. This corresponds to the name of the file
+    # in S3.
+    email_info = event['Records'][0]['ses']
     try:
+        # configure destination finder separately from our main email setup logic so that it's guaranteed
+        # to be in scope if there's errors down the line.
         destination_finder = DestinationFinder()
-        # Get the unique ID of the message. This corresponds to the name of the file
-        # in S3.
-        email_info = event['Records'][0]['ses']
+    except Exception:
+        logging.error("Exception configuring destination finder.")
+        raise
+
+    try:
         message_id = email_info['mail']['messageId']
         logging.info(f"Received message ID {message_id}")
         if is_spam(email_info):
             logging.info("Rejecting identified spam/virus email.")
+            send_fallback_email(
+                message_id,
+                email_info['mail']['commonHeaders']['from'][0],
+                destination_finder.catch_all,
+                'spam/virus',
+                email_info['mail']['commonHeaders']['subject'])
             client_ses.send_email(
                 FromEmailAddress=sender,
                 Destination={
@@ -244,4 +294,10 @@ def lambda_handler(event, context):
     except Exception:
         logging.debug("Logging complete incoming event for debugging:")
         logging.error(event)
+        send_fallback_email(
+            message_id,
+            email_info['mail']['commonHeaders']['from'][0],
+            destination_finder.catch_all,
+            'forward error',
+            email_info['mail']['commonHeaders']['subject'])
         raise
