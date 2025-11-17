@@ -22,3 +22,13 @@ resource "aws_route53_record" "website_aliases" {
     evaluate_target_health = true
   }
 }
+
+module "redirect_sites" {
+  for_each = var.redirects
+  source = "../s3-website-redirect"
+  from = {
+    domain = each.key
+    zone_id = each.value
+  }
+  to = var.domain_name
+}

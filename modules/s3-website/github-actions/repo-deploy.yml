@@ -1,4 +1,4 @@
-# Build site using Zola and Deploy to Cloudflare Workers
+# Build site using Zola and Deploy to S3
 # Configure the listed secret values to deploy.
 # The IAM user associated with the access key should ONLY have the following permissions,
 # scoped to the bucket and its objects:
@@ -20,6 +20,7 @@ jobs:
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      ZOLA_BUILD: ${{  }}
     steps:
       - uses: actions/checkout@v2
       - name: Install and Run Zola

@@ -2,6 +2,11 @@ variable "incoming_domain" {
   type = string
 }
 
+variable "zone_id" {
+  type = string
+  description = "Route53 zone ID for the domain under var.incoming_domain"
+}
+
 variable "bucket_prefix" {
   type    = string
   default = "incoming"
@@ -9,6 +14,15 @@ variable "bucket_prefix" {
 
 variable "forwarder_email" {
   type = string
+}
+
+variable "reject_spam" {
+  type = bool
+  description = <<DESC
+    Reject spam at the forwarder level. Reversing false positives is difficult,
+    so this is usually only a good idea if your client has no spam filter.
+  DESC
+  default = false
 }
 
 variable "inbox_destinations" {

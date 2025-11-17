@@ -8,6 +8,10 @@ resource "aws_ses_receipt_rule_set" "forwarding_rules" {
 
 resource "aws_ses_active_receipt_rule_set" "active" {
   rule_set_name = aws_ses_receipt_rule_set.forwarding_rules.id
+  
+  lifecycle {
+    ignore_changes = [rule_set_name]
+  }
 }
 
 resource "aws_ses_receipt_rule" "dump_to_s3_and_forward" {

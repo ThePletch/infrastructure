@@ -7,17 +7,30 @@ from email.utils import parseaddr
 from itertools import chain
 import logging
 
-import boto3
+from aws_lambda_powertools.utilities.data_classes import (
+    event_source,
+    SESEvent,
+)
+from aws_lambda_powertools.utilities.data_classes.ses_event import SESMessage
+from aws_lambda_powertools.utilities.typing import LambdaContext
+from boto3.session import Session
 from botocore.exceptions import ClientError
+from botocore.response import StreamingBody
+from typing import TypedDict
+
+# from mypy_boto3_s3.client import S3Client
+# from mypy_boto3_ssm.client import SSMClient
+# from mypy_boto3_sesv2.client import SESV2Client
+# from mypy_boto3_sesv2.type_defs import SendEmailRequestRequestTypeDef, SendEmailResponseTypeDef
 
 logging.getLogger().setLevel(logging.INFO)
 
 region = os.environ['Region']
 sender = os.environ['MailSender']
+reject_spam = os.environ['RejectSpam'] == 'true' if 'RejectSpam' in os.environ else False
 incoming_email_bucket = os.environ['MailS3Bucket']
 incoming_email_prefix = os.environ['MailS3Prefix']
 forwarding_config_prefix = os.environ['ForwardingConfigPrefix']
-
 sender_domain = sender.split('@')[1]
 
 # prefixes in AWS SSM where forwarding config is recorded
@@ -25,23 +38,29 @@ explicits_prefix = forwarding_config_prefix + '/inboxes'
 prefixes_prefix = forwarding_config_prefix + '/inbox-prefixes'
 catch_all_path = forwarding_config_prefix + '/catch-all'
 
-client_ssm = boto3.client('ssm')
-client_s3 = boto3.client('s3')
-client_ses = boto3.client('sesv2', region)
+client_ssm = Session().client('ssm')
+client_s3 = Session().client('s3')
+client_ses = Session().client('sesv2', region)
 
 
-class NonsenseEmailException(Exception):
-    pass
+def get_param_config(prefix: str, next_token: str | None = None) -> dict[str, list[str]]:
+    if next_token:
+        params = client_ssm.get_parameters_by_path(Path=prefix, NextToken=next_token)
+    else:
+        params = client_ssm.get_parameters_by_path(Path=prefix)
 
-
-def get_param_config(prefix):
-    params = client_ssm.get_parameters_by_path(Path=prefix)
-
-    return {
+    params_from_this_run = {
         param['Name'].removeprefix(prefix).lstrip('/'): param['Value'].split(',')
         for param
         in params['Parameters']
     }
+
+    if 'NextToken' in params:
+        return {
+            **get_param_config(prefix, params['NextToken']),
+            **params_from_this_run
+        }
+    return params_from_this_run
 
 
 class DestinationFinder:
@@ -58,7 +77,7 @@ class DestinationFinder:
         logging.info("Exact matches loaded: " + repr(self.inboxes))
         logging.info("Prefixes loaded: " + repr(self.prefixes))
 
-    def _get_individual_destination(self, inbox):
+    def _get_individual_destination(self, inbox: str):
         exact_match = self.inboxes.get(inbox, [])
 
         prefix_matches = [
@@ -74,7 +93,7 @@ class DestinationFinder:
 
         return destinations
 
-    def get_destinations(self, recipients):
+    def get_destinations(self, recipients: list[str]):
         destination_sets = [
             self._get_individual_destination(recipient.removesuffix('@' + sender_domain))
             for recipient in recipients
@@ -86,11 +105,17 @@ class DestinationFinder:
         return self.catch_all if len(destinations) == 0 else list(destinations)
 
     @staticmethod
-    def email_is_for_target_domain(email):
+    def email_is_for_target_domain(email: str) -> bool:
         return email.endswith(sender_domain)
 
 
-def get_message_s3_path(message_id):
+S3PathTypedDict = TypedDict('S3PathTypedDict', {
+    'Bucket': str,
+    'Key': str,
+})
+
+
+def get_message_s3_path(message_id: str) -> S3PathTypedDict:
     if incoming_email_prefix:
         object_path = (incoming_email_prefix + "/" + message_id)
     else:
@@ -109,7 +134,7 @@ def with_message_from_s3(message_id: str):
     yield client_s3.get_object(**get_message_s3_path(message_id))['Body']
 
 
-def rewrite_forwarder(email_from: str):
+def rewrite_forwarder(email_from: str) -> str:
     alias, address = parseaddr(email_from)
     if alias.strip() != '':
         quote_escaped_alias = alias.replace("\"", "\\\"")
@@ -122,7 +147,11 @@ def rewrite_forwarder(email_from: str):
     return result
 
 
-def create_message(email_info, msg_stream, destination_finder):
+def create_message(
+    email_info: SESMessage,
+    msg_stream: StreamingBody,
+    destination_finder: DestinationFinder,
+):
     # Parse the email body. We unfortunately can't identify/eliminate defects during parsing,
     # e.g. header limits specified in the policy will be ignored.
     parser = BytesFeedParser(policy=email.policy.SMTPUTF8.clone(refold_source='none'))
@@ -136,7 +165,7 @@ def create_message(email_info, msg_stream, destination_finder):
     mail_object.replace_header('From', ";".join([
         rewrite_forwarder(from_email)
         for from_email
-        in email_info['mail']['commonHeaders']['from']
+        in email_info.mail.common_headers.get_from
     ]))
 
     """
@@ -149,28 +178,36 @@ def create_message(email_info, msg_stream, destination_finder):
     del mail_object['MIME-Version']
     mail_object.add_header('MIME-Version', '1.0')
 
-    base_from = rewrite_forwarder(email_info['mail']['commonHeaders']['from'][0])
+    base_from = rewrite_forwarder(email_info.mail.common_headers.get_from[0])
 
-    if 'sender' in email_info['mail']['commonHeaders']:
-        mail_object.replace_header('Sender', rewrite_forwarder(email_info['mail']['commonHeaders']['sender']))
+    if email_info.mail.common_headers.sender is not None:
+        if len(email_info.mail.common_headers.sender) > 0:
+            mail_object.replace_header('Sender', rewrite_forwarder(email_info.mail.common_headers.sender[0]))
+        else:
+            mail_object.add_header('Sender', rewrite_forwarder('someBODY'))
 
-    if 'returnPath' in email_info['mail']['commonHeaders']:
-        mail_object.replace_header('Return-Path', rewrite_forwarder(email_info['mail']['commonHeaders']['returnPath']))
-    elif 'Return-Path' in mail_object and mail_object['Return-Path'] == '<>':
-        # handler for bogus return path that failed to parse in SES
-        del mail_object['Return-Path']
+    if 'Return-Path' in mail_object:
+        print(mail_object['Return-Path'])
+        if mail_object['Return-Path'] == '<>':
+            # handler for bogus return path that failed to parse in SES
+            del mail_object['Return-Path']
+            mail_object.add_header('Return-Path', sender)
+        else:
+            mail_object.replace_header('Return-Path', rewrite_forwarder(email_info.mail.common_headers.return_path))
+    else:
+        mail_object.add_header('Return-Path', sender)
 
     del mail_object['DKIM-Signature']
 
     if 'Reply-To' in mail_object and mail_object['Reply-To'].count('@') != 1:
         logging.warning("Replacing invalid Reply-To email address with original sender email.")
         # as always, this is a handler for a nonsense email i received with an invalid reply-to address
-        mail_object.replace_header('Reply-To', email_info['mail']['commonHeaders']['from'][0])
+        mail_object.replace_header('Reply-To', email_info.mail.common_headers.get_from[0])
     elif 'Reply-To' not in mail_object:
-        mail_object.add_header('Reply-To', email_info['mail']['commonHeaders']['from'][0])
+        mail_object.add_header('Reply-To', email_info.mail.common_headers.get_from[0])
 
-    logging.info("Finding destinations for original target(s): " + ", ".join(email_info['mail']['commonHeaders']['to']))
-    recipients = destination_finder.get_destinations(email_info['mail']['commonHeaders']['to'])
+    logging.info("Finding destinations for original target(s): " + ", ".join(email_info.mail.common_headers.to))
+    recipients = destination_finder.get_destinations(email_info.mail.common_headers.to)
 
     logging.info("Sending email to addresses: " + ", ".join(recipients))
     return {
@@ -192,7 +229,10 @@ def send_email(message):
 
     # Display an error if something goes wrong.
     except ClientError as e:
-        logging.error(f"Failed to send email: {e.response['Error']['Message']}")
+        if 'Error' in e.response and 'Message' in e.response['Error']:
+            logging.error(f"Failed to send email: {e.response['Error']['Message']}")
+        else:
+            logging.error("Failed to send email, but no error message provided.")
         logging.warning(e.response)
         logging.warning(message)
 
@@ -201,12 +241,15 @@ def send_email(message):
     return "Email sent! Message ID: " + response['MessageId']
 
 
-def is_spam(email_info):
-    receipt = email_info['receipt']
+def is_spam(email_info: SESMessage) -> bool:
+    receipt = email_info.receipt
 
-    for verdict in ('spamVerdict', 'virusVerdict'):
-        if verdict in receipt and receipt[verdict]['status'] not in ["PASS", "DISABLED"]:
-            logging.info(f"Failed verdict: {verdict}")
+    for verdict_name, verdict in {
+        'spam_verdict': receipt.spam_verdict,
+        'virus_verdict': receipt.virus_verdict,
+    }.items():
+        if verdict.status not in ["PASS", "DISABLED"] and reject_spam:
+            logging.info(f"Failed verdict: {verdict_name}")
             logging.debug(email_info)
             return True
 
@@ -215,11 +258,17 @@ def is_spam(email_info):
 
 # Send a bare-bones email in the event that we either cannot or will not forward the triggering
 # email, e.g. it was identified as spam or we encountered an error
-def send_fallback_email(message_id, original_sender, recipient, reason, original_subject):
-    client_ses.send_email(
+def send_fallback_email(
+    message_id: str,
+    original_sender: str,
+    recipients: list[str],
+    reason: str,
+    original_subject: str,
+):
+    return client_ses.send_email(
         FromEmailAddress=sender,
         Destination={
-            'ToAddresses': recipient,
+            'ToAddresses': recipients,
         },
         Content={
             'Simple': {
@@ -236,10 +285,11 @@ def send_fallback_email(message_id, original_sender, recipient, reason, original
     )
 
 
-def lambda_handler(event, context):
+@event_source(data_class=SESEvent)
+def lambda_handler(event: SESEvent, context: LambdaContext):
     # Get the unique ID of the message. This corresponds to the name of the file
     # in S3.
-    email_info = event['Records'][0]['ses']
+    email_info = next(event.records).ses
     try:
         # configure destination finder separately from our main email setup logic so that it's guaranteed
         # to be in scope if there's errors down the line.
@@ -248,18 +298,19 @@ def lambda_handler(event, context):
         logging.error("Exception configuring destination finder.")
         raise
 
+    message_id = email_info.mail.message_id
     try:
-        message_id = email_info['mail']['messageId']
         logging.info(f"Received message ID {message_id}")
         if is_spam(email_info):
             logging.info("Rejecting identified spam/virus email.")
-            send_fallback_email(
+            _ = send_fallback_email(
                 message_id,
-                email_info['mail']['commonHeaders']['from'][0],
+                email_info.mail.common_headers.get_from[0],
                 destination_finder.catch_all,
                 'spam/virus',
-                email_info['mail']['commonHeaders']['subject'])
-            client_ses.send_email(
+                email_info.mail.common_headers.subject
+            )
+            _ = client_ses.send_email(
                 FromEmailAddress=sender,
                 Destination={
                     'ToAddresses': destination_finder.catch_all,
@@ -267,11 +318,11 @@ def lambda_handler(event, context):
                 Content={
                     'Simple': {
                         'Subject': {
-                            'Data': f"Rejected spam/virus email from {email_info['mail']['commonHeaders']['from'][0]}",
+                            'Data': f"Rejected spam/virus email from {email_info.mail.common_headers.get_from}",
                         },
                         'Body': {
                             'Text': {
-                                'Data': f"Rejected subject: {email_info['mail']['commonHeaders']['subject']}\nID: {message_id}"
+                                'Data': f"Rejected subject: {email_info.mail.common_headers.subject}\nID: {message_id}"
                             }
                         }
                     }
@@ -288,16 +339,17 @@ def lambda_handler(event, context):
         result = send_email(message)
 
         # if we get here, the email was sent successfully, so we'll blow away the raw email from S3.
-        client_s3.delete_object(**get_message_s3_path(message_id))
+        _ = client_s3.delete_object(**get_message_s3_path(message_id))
 
         logging.debug(result)
     except Exception:
         logging.debug("Logging complete incoming event for debugging:")
         logging.error(event)
-        send_fallback_email(
+        _ = send_fallback_email(
             message_id,
-            email_info['mail']['commonHeaders']['from'][0],
+            email_info.mail.common_headers.get_from[0],
             destination_finder.catch_all,
             'forward error',
-            email_info['mail']['commonHeaders']['subject'])
+            email_info.mail.common_headers.subject
+        )
         raise

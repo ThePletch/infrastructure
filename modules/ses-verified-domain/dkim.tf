@@ -6,7 +6,7 @@ resource "aws_route53_record" "dkim_records" {
   # always three, there are
   count = 3
 
-  zone_id = data.aws_route53_zone.target_domain.zone_id
+  zone_id = var.zone_id
   name    = "${aws_ses_domain_dkim.dkim.dkim_tokens[count.index]}._domainkey"
   type    = "CNAME"
   ttl     = "600"

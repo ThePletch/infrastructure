@@ -1,6 +1,8 @@
 locals {
   deployment_package_path = "${path.module}/files/${var.name}.zip"
   source_filename_no_ext  = split(".", basename(var.source_code_file))[0]
+  runtime_layer_string = replace(var.function_runtime, ".", "")
+  architecture = "x86_64"
 }
 
 data "archive_file" "deployment_package" {
@@ -20,6 +22,9 @@ resource "aws_lambda_function" "function" {
   role             = aws_iam_role.function_role.arn
   handler          = coalesce(var.handler, "${local.source_filename_no_ext}.${var.handler_function_name}")
   memory_size      = var.memory_mb
+
+  layers = var.layer_arns
+
   dead_letter_config {
     target_arn = aws_sqs_queue.dead_letters.arn
   }

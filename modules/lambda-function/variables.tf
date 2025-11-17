@@ -25,6 +25,11 @@ variable "handler_function_name" {
   default = "lambda_handler"
 }
 
+variable "layer_arns" {
+  type = list(string)
+  default = []
+}
+
 variable "timeout" {
   type    = number
   default = 3

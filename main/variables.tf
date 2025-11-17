@@ -12,21 +12,19 @@ variable "aws_credentials_profile" {
   default = "personal"
 }
 
-variable "forwarder_email" {
+variable "forwarding_configs" {
   description = <<DESC
-    Email used as 'from' address for forwarded email.
-    Do not include domain - domain is the base domain above.
+  Config for forwarding for additional domains.
+  Each key is a root domain to set up forwarding for.
+  See variables.tf in ses-email-forwarding for more.
   DESC
-  type        = string
-}
-
-variable "forwarding_config" {
-  description = "Config for email forwarder. See variables.tf in ses-email-forwarding for more."
-  type = object({
-    prefix_mapping = map(list(string))
-    exact_mapping  = map(list(string))
+  type = map(object({
+    forwarder_email = optional(string, "mail-forwarder")
+    prefix_mapping = optional(map(list(string)), {})
+    exact_mapping  = optional(map(list(string)), {})
     catch_all      = list(string)
-  })
+  }))
+  default = {}
 }
 
 variable "parties_domain" {
@@ -36,7 +34,17 @@ variable "parties_domain" {
 
 variable "personal_site" {
   type = object({
-    main_domain = string
-    aliases     = list(string)
+    main_domain   = string
+    aliases       = list(string)
+    redirects = map(string)
+    contact_email = string
+  })
+}
+
+variable "old_personal_site" {
+  type = object({
+    main_domain   = string
+    aliases       = list(string)
+    contact_email = string
   })
 }

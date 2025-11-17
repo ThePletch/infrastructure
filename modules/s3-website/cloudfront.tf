@@ -1,8 +1,8 @@
 module "cert" {
-  source         = "../ssl-cert"
-  domain_name    = var.domain_name
-  aliases        = var.aliases
-  hosted_zone_id = var.zone_id
+  source          = "../ssl-cert"
+  domain_name     = var.domain_name
+  aliases         = var.aliases
+  hosted_zone_id  = var.zone_id
 }
 
 locals {
@@ -15,7 +15,7 @@ resource "aws_cloudfront_distribution" "website_cdn" {
     # to make cloudfront treat it like a website instead of a bucket.
     # This lets us do things like serve `index.html` as the default document
     # for subfolders.
-    domain_name = aws_s3_bucket_website_configuration.main.website_endpoint
+    domain_name = module.base.website_endpoint
     origin_id   = local.cloudfront_origin
 
     custom_origin_config {
@@ -63,6 +63,6 @@ resource "aws_cloudfront_distribution" "website_cdn" {
   aliases             = concat([var.domain_name], var.aliases)
 
   tags = {
-    "operations-contact" = "ops@steve-pletcher.com"
+    "operations-contact" = var.ops_contact
   }
 }

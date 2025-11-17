@@ -1,14 +1,9 @@
-// doesn't handle stripping subdomains
-data "aws_route53_zone" "target_domain" {
-  name = var.domain
-}
-
 resource "aws_ses_domain_identity" "domain" {
   domain = var.domain
 }
 
 resource "aws_route53_record" "domain_verification" {
-  zone_id = data.aws_route53_zone.target_domain.zone_id
+  zone_id = var.zone_id
   name    = "_amazonses.${aws_ses_domain_identity.domain.id}"
   type    = "TXT"
   ttl     = "600"

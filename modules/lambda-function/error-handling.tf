@@ -18,7 +18,7 @@ resource "aws_sns_topic_subscription" "error_notifier" {
 
 resource "aws_cloudwatch_metric_alarm" "error_detection" {
   alarm_name          = "${var.name}-errors"
-  alarm_description   = "Errors have occurred in email forwarder ${aws_lambda_function.function.function_name}"
+  alarm_description   = "Errors have occurred in ${aws_lambda_function.function.function_name}"
   namespace           = "AWS/Lambda"
   metric_name         = "Errors"
   comparison_operator = "GreaterThanThreshold"
