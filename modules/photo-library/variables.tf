@@ -2,6 +2,14 @@ variable "domain_name" {
   type = string
 }
 
+variable "github_oidc_provider_arn" {
+  type = string
+}
+
+variable "github_actions_repository" {
+  type = string
+}
+
 variable "aliases" {
   type    = list(string)
   default = []

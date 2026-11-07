@@ -24,10 +24,12 @@ resource "aws_route53_record" "website_aliases" {
 }
 
 module "redirect_sites" {
-  for_each = var.redirects
-  source = "../s3-website-redirect"
+  for_each                  = var.redirects
+  source                    = "../s3-website-redirect"
+  github_oidc_provider_arn  = var.github_oidc_provider_arn
+  github_actions_repository = var.github_actions_repository
   from = {
-    domain = each.key
+    domain  = each.key
     zone_id = each.value
   }
   to = var.domain_name

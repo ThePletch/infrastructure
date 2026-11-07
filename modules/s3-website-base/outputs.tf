@@ -7,11 +7,11 @@ output "zone_id" {
 }
 
 output "deployer_arn" {
-  value = aws_iam_user.deployer.arn
+  value = aws_iam_role.deployer.arn
 }
 
 output "deployer_name" {
-  value = aws_iam_user.deployer.name
+  value = aws_iam_role.deployer.name
 }
 
 output "bucket_name" {

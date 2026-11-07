@@ -1,7 +1,9 @@
 module "website" {
-  source = "../s3-website-base"
-  domain_name = var.from.domain
-  redirect_to = var.to
+  source                    = "../s3-website-base"
+  domain_name               = var.from.domain
+  redirect_to               = var.to
+  github_oidc_provider_arn  = var.github_oidc_provider_arn
+  github_actions_repository = var.github_actions_repository
 }
 
 resource "aws_route53_record" "main" {

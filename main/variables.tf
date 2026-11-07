@@ -52,6 +52,12 @@ variable "parties_dmarc_report_email" {
   type = string
 }
 
+variable "github_actions_repository" {
+  description = "GitHub repository allowed to assume site deploy roles, as owner/name."
+  type        = string
+  default     = "ThePletch/infrastructure"
+}
+
 variable "sites" {
   type = map(object({
     main_subdomain = optional(string)

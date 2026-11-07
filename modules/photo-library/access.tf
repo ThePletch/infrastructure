@@ -32,9 +32,9 @@ data "aws_iam_policy_document" "deny_photo_writes" {
   }
 }
 
-resource "aws_iam_user_policy" "deny_photo_writes" {
+resource "aws_iam_role_policy" "deny_photo_writes" {
   name   = "deny-photo-library-writes"
-  user   = module.website.deployer_name
+  role   = module.website.deployer_name
   policy = data.aws_iam_policy_document.deny_photo_writes.json
 }
 
@@ -45,8 +45,8 @@ data "aws_iam_policy_document" "cloudfront_invalidation" {
   }
 }
 
-resource "aws_iam_user_policy" "cloudfront_invalidation" {
+resource "aws_iam_role_policy" "cloudfront_invalidation" {
   name   = "can-invalidate-cloudfront"
-  user   = module.website.deployer_name
+  role   = module.website.deployer_name
   policy = data.aws_iam_policy_document.cloudfront_invalidation.json
 }

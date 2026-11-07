@@ -45,12 +45,12 @@ resource "aws_s3_bucket_ownership_controls" "main" {
 
 data "aws_iam_policy_document" "open" {
   statement {
-    sid = "Allow public access to all objects"
-    actions = ["s3:GetObject"]
+    sid       = "Allow public access to all objects"
+    actions   = ["s3:GetObject"]
     resources = ["${aws_s3_bucket.main.arn}/*"]
 
     principals {
-      type = "*"
+      type        = "*"
       identifiers = ["*"]
     }
   }

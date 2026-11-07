@@ -1,10 +1,12 @@
 module "website" {
-  source      = "../s3-website"
-  domain_name = var.domain_name
-  aliases     = var.aliases
-  redirects   = var.redirects
-  zone_id     = var.zone_id
-  ops_contact = var.ops_contact
+  source                    = "../s3-website"
+  domain_name               = var.domain_name
+  aliases                   = var.aliases
+  redirects                 = var.redirects
+  zone_id                   = var.zone_id
+  ops_contact               = var.ops_contact
+  github_oidc_provider_arn  = var.github_oidc_provider_arn
+  github_actions_repository = var.github_actions_repository
 
   function_url_origins = [
     {

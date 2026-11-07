@@ -13,12 +13,36 @@ data "aws_iam_policy_document" "deploy" {
   }
 }
 
-resource "aws_iam_user" "deployer" {
-  name = "${var.domain_name}-deployer"
+data "aws_iam_policy_document" "deployer_trust" {
+  statement {
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+
+    principals {
+      type        = "Federated"
+      identifiers = [var.github_oidc_provider_arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:sub"
+      values   = ["repo:${var.github_actions_repository}:ref:refs/heads/main"]
+    }
+  }
 }
 
-resource "aws_iam_user_policy" "deployer" {
+resource "aws_iam_role" "deployer" {
+  name               = "${var.domain_name}-deployer"
+  assume_role_policy = data.aws_iam_policy_document.deployer_trust.json
+}
+
+resource "aws_iam_role_policy" "deployer" {
   name   = "can-deploy"
-  user   = aws_iam_user.deployer.name
+  role   = aws_iam_role.deployer.name
   policy = data.aws_iam_policy_document.deploy.json
 }
