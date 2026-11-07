@@ -1,12 +1,19 @@
 module "cert" {
-  source          = "../ssl-cert"
-  domain_name     = var.domain_name
-  aliases         = var.aliases
-  hosted_zone_id  = var.zone_id
+  source         = "../ssl-cert"
+  domain_name    = var.domain_name
+  aliases        = var.aliases
+  hosted_zone_id = var.zone_id
 }
 
 locals {
   cloudfront_origin = "S3-${var.domain_name}"
+  function_url_origins = {
+    for origin in var.function_url_origins : origin.origin_id => origin
+  }
+  ordered_cache_behaviors = {
+    for index, behavior in var.ordered_cache_behaviors :
+    format("%03d", index) => behavior
+  }
 }
 
 resource "aws_cloudfront_distribution" "website_cdn" {
@@ -19,10 +26,26 @@ resource "aws_cloudfront_distribution" "website_cdn" {
     origin_id   = local.cloudfront_origin
 
     custom_origin_config {
-      https_port = 443
-      http_port = 80
+      https_port             = 443
+      http_port              = 80
       origin_protocol_policy = "http-only"
-      origin_ssl_protocols = ["SSLv3", "TLSv1", "TLSv1.1", "TLSv1.2"]
+      origin_ssl_protocols   = ["SSLv3", "TLSv1", "TLSv1.1", "TLSv1.2"]
+    }
+  }
+
+  dynamic "origin" {
+    for_each = local.function_url_origins
+    content {
+      domain_name              = origin.value.domain_name
+      origin_id                = origin.value.origin_id
+      origin_access_control_id = origin.value.origin_access_control_id
+
+      custom_origin_config {
+        http_port              = 80
+        https_port             = 443
+        origin_protocol_policy = "https-only"
+        origin_ssl_protocols   = ["TLSv1.2"]
+      }
     }
   }
 
@@ -58,11 +81,35 @@ resource "aws_cloudfront_distribution" "website_cdn" {
     }
   }
 
-  enabled             = true
-  is_ipv6_enabled     = true
-  aliases             = concat([var.domain_name], var.aliases)
+  dynamic "ordered_cache_behavior" {
+    for_each = local.ordered_cache_behaviors
+    content {
+      path_pattern             = ordered_cache_behavior.value.path_pattern
+      allowed_methods          = ordered_cache_behavior.value.allowed_methods
+      cached_methods           = ordered_cache_behavior.value.cached_methods
+      target_origin_id         = ordered_cache_behavior.value.target_origin_id
+      viewer_protocol_policy   = "redirect-to-https"
+      cache_policy_id          = ordered_cache_behavior.value.cache_policy_id
+      origin_request_policy_id = ordered_cache_behavior.value.origin_request_policy_id
+      compress                 = ordered_cache_behavior.value.compress
+    }
+  }
+
+  enabled         = true
+  is_ipv6_enabled = true
+  aliases         = concat([var.domain_name], var.aliases)
 
   tags = {
     "operations-contact" = var.ops_contact
   }
+}
+
+resource "aws_lambda_permission" "function_url_origin" {
+  for_each               = local.function_url_origins
+  statement_id           = "AllowCloudFrontInvokeUrl"
+  action                 = "lambda:InvokeFunctionUrl"
+  function_name          = each.value.function_name
+  principal              = "cloudfront.amazonaws.com"
+  source_arn             = aws_cloudfront_distribution.website_cdn.arn
+  function_url_auth_type = "AWS_IAM"
 }

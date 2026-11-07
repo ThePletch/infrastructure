@@ -8,23 +8,39 @@ variable "aws_region" {
 }
 
 variable "aws_credentials_profile" {
-  type = string
+  type    = string
   default = "personal"
 }
 
-variable "forwarding_configs" {
-  description = <<DESC
-  Config for forwarding for additional domains.
-  Each key is a root domain to set up forwarding for.
-  See variables.tf in ses-email-forwarding for more.
-  DESC
-  type = map(object({
-    forwarder_email = optional(string, "mail-forwarder")
-    prefix_mapping = optional(map(list(string)), {})
-    exact_mapping  = optional(map(list(string)), {})
-    catch_all      = list(string)
-  }))
-  default = {}
+variable "mxroute" {
+  description = "MXRoute receive config: domains, primary mailbox, and exact forwarders"
+  type = object({
+    server         = string
+    primary_domain = string
+    primary_local  = string
+    domains = map(object({
+      mail_from_subdomain = string
+      dmarc_email         = string
+      # subdomain provided by MXRoute panel for inserting proof of ownership record
+      # cannot be derived via API, must be looked up manually in web console
+      verification_record_name = string
+    }))
+    # domain → local-part → destination addresses
+    forwarders = map(map(list(string)))
+  })
+}
+
+variable "mxroute_mailbox_password" {
+  description = "Password for the primary MXRoute mailbox (set via TF_VAR_mxroute_mailbox_password). Write-only; not stored in state."
+  type        = string
+  sensitive   = true
+  ephemeral   = true
+}
+
+variable "mxroute_mailbox_password_version" {
+  description = "Bump this when rotating mxroute_mailbox_password so Terraform resends the write-only password"
+  type        = number
+  default     = 1
 }
 
 variable "parties_domain" {
@@ -32,19 +48,34 @@ variable "parties_domain" {
   type        = string
 }
 
-variable "personal_site" {
-  type = object({
-    main_domain   = string
-    aliases       = list(string)
-    redirects = map(string)
-    contact_email = string
-  })
+variable "parties_dmarc_report_email" {
+  type = string
 }
 
-variable "old_personal_site" {
+variable "sites" {
+  type = map(object({
+    main_subdomain = optional(string)
+    base_domain    = string
+    aliases        = optional(list(string), [])
+    redirects      = optional(map(string), {})
+    contact_email  = string
+    photo_prefix   = optional(string, "")
+  }))
+}
+
+variable "printful_api_key" {
+  type        = string
+  default     = ""
+  sensitive   = true
+  description = "Printful API token for photo libraries. Leave empty until print listings are enabled."
+}
+
+variable "stripe" {
   type = object({
-    main_domain   = string
-    aliases       = list(string)
-    contact_email = string
+    secret_key     = optional(string, "")
+    webhook_secret = optional(string, "")
   })
+  default     = {}
+  sensitive   = true
+  description = "Stripe secrets for print checkout. Leave empty until you have Stripe set up."
 }

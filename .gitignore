@@ -19,3 +19,7 @@ override.tf.json
 
 modules/*/files
 __pycache__
+
+static-sites/*/node_modules
+static-sites/*/dist
+static-sites/photos/sample-photos/*.jpg

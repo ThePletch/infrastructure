@@ -11,6 +11,6 @@ variable "documents" {
 }
 
 variable "redirect_to" {
-  type = string
+  type    = string
   default = null
 }

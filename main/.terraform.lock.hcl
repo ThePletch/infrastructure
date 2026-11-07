@@ -1,6 +1,28 @@
 # This file is maintained automatically by "terraform init".
 # Manual edits may be lost in future updates.
 
+provider "registry.terraform.io/harleypig/mxroute" {
+  version     = "1.0.0"
+  constraints = "~> 1.0"
+  hashes = [
+    "h1:MiKHWDQjhFffibgN9DSYE8eEX9xfGtSqlRocopdJ/2o=",
+    "zh:03fb3a4d1f30c4e2434d6e95dd78fc0a1dd6456cceed2e309a9be0c66545326a",
+    "zh:288d936e45f975fd13301612c9b04bb81088fb2ed073e4cdf3284668427c96a3",
+    "zh:508d0ed42311eae3ed85db2ceec7aea79eaaaa102a47071dfbc0c93fa7ce7513",
+    "zh:5345df64699448797cd99712bb34694f28b41cc8fb07ad017633047631cfe6e9",
+    "zh:8191612f0c232db249e9338d7129e120880a6ce4f595e936b1d4097dd216b4a8",
+    "zh:890df766e9b839623b1f0437355032a3c006226a6c200cd911e15ee1a9014e9f",
+    "zh:ac9335d20d59074e8a9cf659e477564bb49ebc17448aef239f1cd591518caee4",
+    "zh:afcb276081a9929b76808765048d74abc1db2d428ff905620f3e6db88bfea2f0",
+    "zh:bd1ea9397a07d5a0bf318e3006d7cdbbebdb47b1f5185db005b2a2ceb878a303",
+    "zh:cf273d221d99bb51d6a5741398025ea43cc05b0175369cb11b00adb7df281634",
+    "zh:d340ebf8088ea93f4039609f8afc9d7d7d681bc2d6d98ed29190324f04fc34da",
+    "zh:d6a7b0f43184df95e19a9b6b1ea2b090bf81fa1e844cc85b5b9c259a5e6121bb",
+    "zh:f6e84a87fa0509e59b32557796766aa524e7c2cd9a095da7412ca9d903d7f979",
+    "zh:fb0a2f965eb01e51f6f99f9d0c91d351421cc28a9c79ceafa62e110311a5841d",
+  ]
+}
+
 provider "registry.terraform.io/hashicorp/archive" {
   version = "2.7.0"
   hashes = [

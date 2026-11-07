@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Astrophotography by Shay Pletcher</title>
+    <link rel="stylesheet" href="/assets/styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <p class="wordmark">Shay takes space pictures</p>
+      <p class="wordmark">astrophotography if you're fancy</p>
+      <nav class="site-nav" aria-label="Site">
+        <a href="/" aria-current="page">gallery</a>
+        <a href="/contact.html">displaying my work</a>
+      </nav>
+      <p>i've been taking pictures of space in my backyard in boston since 2023. here's a few.</p>
+    </header>
+    <nav id="tags" class="tags" hidden></nav>
+    <p id="status" class="status" hidden></p>
+    <main id="grid" class="grid"></main>
+    <nav id="pagination" class="pagination" hidden></nav>
+    <dialog id="lightbox" class="lightbox">
+      <form method="dialog">
+        <button type="submit" class="icon-button close" aria-label="Close">Close</button>
+      </form>
+      <figure>
+        <img alt="" />
+        <figcaption>
+          <h2></h2>
+          <p class="description"></p>
+          <ul class="lightbox-tags"></ul>
+        </figcaption>
+      </figure>
+      <form class="buy" id="buy" hidden>
+        <label>
+          <span>Print</span>
+          <select id="print-variant"></select>
+        </label>
+        <button type="submit" class="text-button">Buy print</button>
+        <p class="buy-status" hidden></p>
+      </form>
+      <div class="lightbox-nav">
+        <button type="button" class="text-button prev">Previous</button>
+        <button type="button" class="text-button next">Next</button>
+      </div>
+    </dialog>
+    <noscript>
+      <p class="status">JavaScript is required to load the gallery.</p>
+    </noscript>
+    <script src="/assets/main.js" defer></script>
+  </body>
+</html>

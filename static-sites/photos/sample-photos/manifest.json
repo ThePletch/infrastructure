@@ -1,0 +1,52 @@
+{
+  "photos": [
+    {
+      "file": "01-landscape-winter-mountain-valley-landscape-snowy.jpg",
+      "title": "Glacier valley",
+      "description": "Ice falling through a high mountain pass.",
+      "tags": ["landscape", "snow"]
+    },
+    {
+      "file": "02-coast-greenery-rocky-coastline-oceans-big.jpg",
+      "title": "Big Sur",
+      "description": "Coast highway in the fog.",
+      "tags": ["coast"]
+    },
+    {
+      "file": "03-forest-forest-path-trees-water.jpg",
+      "title": "After rain",
+      "description": "A wet path through spring woods.",
+      "tags": ["forest"]
+    },
+    {
+      "file": "04-night-milky-way.jpg",
+      "title": "Milky Way",
+      "description": "Bare tree against a summer sky.",
+      "tags": ["night"]
+    },
+    {
+      "file": "05-lighthouse-svenner-at-sunset.jpg",
+      "title": "Svenner",
+      "description": "Lighthouse at sunset, Norway.",
+      "tags": ["coast", "night"]
+    },
+    {
+      "file": "06-desert-free-desert-dunes-sand-fabric.jpg",
+      "title": "Dune",
+      "description": "Wind-cut sand.",
+      "tags": ["desert"]
+    },
+    {
+      "file": "07-portrait-black-and-white-portrait-photography.jpg",
+      "title": "Portrait",
+      "description": "Afternoon light on a stone wall.",
+      "tags": ["portrait"]
+    },
+    {
+      "file": "08-snow-inner-basin.jpg",
+      "title": "Inner Basin",
+      "description": "Aspens in late spring.",
+      "tags": ["forest", "landscape"]
+    }
+  ]
+}

@@ -1,0 +1,318 @@
+:root {
+  color-scheme: dark;
+  --bg: #0c0c0c;
+  --fg: #ece7dc;
+  --muted: #9a9588;
+  --line: #2a2a2a;
+  --accent: #ece7dc;
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, "Times New Roman", serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  color: var(--fg);
+}
+
+html {
+  background-color: #050505;
+}
+
+html::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    linear-gradient(rgb(5 5 5 / 0.7), rgb(5 5 5 / 0.88)),
+    url("/cropped_final.png") center / cover no-repeat;
+}
+
+body {
+  background: transparent;
+  padding: 2.5rem 1.5rem 4rem;
+  max-width: 88rem;
+  margin: 0 auto;
+}
+
+.site-header {
+  margin-bottom: 2rem;
+}
+
+.wordmark {
+  margin: 0;
+  font-size: 0.95rem;
+  letter-spacing: 0.14em;
+  text-transform: lowercase;
+}
+
+.wordmark a,
+.site-nav a,
+.page a,
+.site-header a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.site-header a:hover,
+.page a:hover {
+  color: var(--fg);
+}
+
+.site-nav {
+  display: flex;
+  gap: 1rem;
+  margin: 0.85rem 0 1.25rem;
+}
+
+.site-nav a {
+  color: var(--muted);
+  letter-spacing: 0.04em;
+}
+
+.site-nav a[aria-current="page"] {
+  color: var(--fg);
+  text-decoration: underline;
+  text-underline-offset: 0.3em;
+}
+
+.page {
+  max-width: 36rem;
+}
+
+.page p {
+  margin: 0 0 1rem;
+  color: var(--muted);
+}
+
+.page a,
+.email-reveal {
+  color: var(--fg);
+  text-decoration: underline;
+  text-underline-offset: 0.25em;
+}
+
+.email-reveal {
+  font: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  margin: 0 0 2rem;
+}
+
+.tags button,
+.text-button,
+.pagination button {
+  font: inherit;
+  color: var(--muted);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+}
+
+.tags button[aria-current="true"],
+.tags button:hover,
+.text-button:hover,
+.pagination button:hover:not(:disabled) {
+  color: var(--fg);
+}
+
+.tags button[aria-current="true"] {
+  text-decoration: underline;
+  text-underline-offset: 0.3em;
+}
+
+.status {
+  color: var(--muted);
+  margin: 4rem 0;
+}
+
+.status a {
+  color: var(--fg);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: 1.25rem;
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tile img {
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  object-fit: cover;
+  background: #161616;
+}
+
+.tile span {
+  font-size: 0.95rem;
+  line-height: 1.3;
+}
+
+.pagination {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 1.5rem;
+  margin-top: 2.5rem;
+  color: var(--muted);
+}
+
+.pagination button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.lightbox {
+  width: min(96vw, 72rem);
+  max-height: 94vh;
+  padding: 1.25rem 1.25rem 1.5rem;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.lightbox::backdrop {
+  background: rgb(0 0 0 / 0.78);
+}
+
+.lightbox figure {
+  margin: 0;
+}
+
+.lightbox img {
+  display: block;
+  width: 100%;
+  max-height: 72vh;
+  object-fit: contain;
+  background: #000;
+}
+
+.lightbox figcaption {
+  margin-top: 0.9rem;
+}
+
+.lightbox h2 {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: normal;
+}
+
+.lightbox .description {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+}
+
+.lightbox-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.9rem;
+  list-style: none;
+  margin: 0.7rem 0 0;
+  padding: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.lightbox-tags button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.lightbox-tags button:hover {
+  color: var(--fg);
+}
+
+.buy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.75rem 1.25rem;
+  margin-top: 1rem;
+}
+
+.buy[hidden] {
+  display: none;
+}
+
+.buy label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.buy select {
+  font: inherit;
+  color: var(--fg);
+  background: transparent;
+  border: 1px solid var(--line);
+  padding: 0.35rem 0.55rem;
+  min-width: 16rem;
+}
+
+.buy-status {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.lightbox-nav {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 1rem;
+}
+
+.icon-button {
+  position: absolute;
+  top: 0.7rem;
+  right: 0.9rem;
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--muted);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.icon-button:hover {
+  color: var(--fg);
+}
+
+.lightbox {
+  position: relative;
+}

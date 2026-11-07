@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Contact — Shay's astrophotography</title>
+    <link rel="stylesheet" href="/assets/styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <p class="wordmark"><a href="/">Shay takes space pictures</a></p>
+      <p class="wordmark">astrophotography if you're fancy</p>
+      <nav class="site-nav" aria-label="Site">
+        <a href="/">gallery</a>
+        <a href="/contact.html" aria-current="page">displaying my work</a>
+      </nav>
+    </header>
+    <main class="page">
+      <p>
+        if you run a coffee shop, book store, etc and want to display my art, get in touch
+      </p>
+      <p>
+        i don't charge, you just have to include a price tag for the print you display and a QR code linking to this website
+      </p>
+      <p>
+        and you gotta give me the money if someone buys it i guess, don't just keep it that'd be pretty rude
+      </p>
+      <button type="button" class="email-reveal" id="show-email">click to see my email if you're not a robot or whatever</button>
+    </main>
+    <script>
+      document.getElementById("show-email").addEventListener("click", (event) => {
+        const addr = "phot" + "os@sha" + "y.zone";
+        const link = document.createElement("a");
+        link.href = "mailto:" + addr;
+        link.textContent = addr;
+        event.currentTarget.replaceWith(link);
+      });
+    </script>
+  </body>
+</html>

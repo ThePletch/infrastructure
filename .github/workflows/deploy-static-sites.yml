@@ -1,0 +1,47 @@
+# Build TypeScript static sites and deploy to S3.
+# Configure:
+#   secrets.AWS_ACCESS_KEY_ID
+#   secrets.AWS_SECRET_ACCESS_KEY
+#   vars.PHOTOS_CLOUDFRONT_DISTRIBUTION_ID
+# The IAM user should be the space.shay.zone-deployer created by Terraform.
+
+name: Deploy static sites
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "static-sites/**"
+      - ".github/workflows/deploy-static-sites.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  photos:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: static-sites/photos
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: us-east-1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: static-sites/photos/package-lock.json
+      - name: Install and build
+        run: |
+          npm ci
+          npm run build
+      - name: Deploy to hosting S3 bucket
+        run: aws s3 sync dist/ s3://space.shay.zone/ --delete --exclude "photos/*"
+      - name: Invalidate CloudFront
+        run: >
+          aws cloudfront create-invalidation
+          --distribution-id ${{ vars.PHOTOS_CLOUDFRONT_DISTRIBUTION_ID }}
+          --paths / /index.html /contact.html /error.html /cropped_final.png /assets/*

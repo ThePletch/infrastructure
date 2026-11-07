@@ -9,3 +9,15 @@ output "zone_id" {
 output "deployer_arn" {
   value = aws_iam_user.deployer.arn
 }
+
+output "deployer_name" {
+  value = aws_iam_user.deployer.name
+}
+
+output "bucket_name" {
+  value = aws_s3_bucket.main.bucket
+}
+
+output "bucket_arn" {
+  value = aws_s3_bucket.main.arn
+}
