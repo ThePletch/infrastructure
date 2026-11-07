@@ -113,3 +113,14 @@ resource "aws_lambda_permission" "function_url_origin" {
   source_arn             = aws_cloudfront_distribution.website_cdn.arn
   function_url_auth_type = "AWS_IAM"
 }
+
+resource "aws_lambda_permission" "function_url_invoke" {
+  for_each      = local.function_url_origins
+  statement_id  = "AllowCloudFrontInvokeFunction"
+  action        = "lambda:InvokeFunction"
+  function_name = each.value.function_name
+  principal     = "cloudfront.amazonaws.com"
+  source_arn    = aws_cloudfront_distribution.website_cdn.arn
+
+  depends_on = [aws_lambda_permission.function_url_origin]
+}
