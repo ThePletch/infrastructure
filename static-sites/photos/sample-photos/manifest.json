@@ -4,7 +4,14 @@
       "file": "01-landscape-winter-mountain-valley-landscape-snowy.jpg",
       "title": "Glacier valley",
       "description": "Ice falling through a high mountain pass.",
-      "tags": ["landscape", "snow"]
+      "tags": ["landscape", "snow"],
+      "prints": [],
+      "crops": [
+        {
+          "file": "07-portrait-black-and-white-portrait-photography.jpg",
+          "label": "4x5"
+        }
+      ]
     },
     {
       "file": "02-coast-greenery-rocky-coastline-oceans-big.jpg",

@@ -696,6 +696,10 @@ SIZE_SETS = (
     (4 / 5, ((8, 10), (16, 20))),
     (3 / 4, ((12, 16), (18, 24))),
     (2 / 3, ((12, 18), (24, 36))),
+    # 8×20 is the only 2:5 poster Printful sells. A 5566×2226 crop is this
+    # ratio to within a pixel. Framed posters have no 8×20 variant, so only
+    # the unframed poster is listed.
+    (2 / 5, ((8, 20),)),
 )
 
 _printful_store_id = None

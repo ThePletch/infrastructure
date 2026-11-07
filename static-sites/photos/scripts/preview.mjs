@@ -65,6 +65,12 @@ function loadPhotos() {
     }
     copy(src, join(photosDir, entry.file));
     const image = `/photos/${entry.file}`;
+    const defaultPrints = [
+      { id: 1, label: "Poster · 12×18", price: "28.00" },
+      { id: 2, label: "Poster · 24×36", price: "48.00" },
+      { id: 3, label: "Framed poster · 12×18", price: "72.00" },
+      { id: 4, label: "Framed poster · 24×36", price: "128.00" },
+    ];
     photos.push({
       thumbnail: image,
       lightbox: image,
@@ -72,12 +78,19 @@ function loadPhotos() {
       title: entry.title,
       description: entry.description ?? "",
       tags: entry.tags ?? [],
-      prints: [
-        { id: 1, label: "Poster · 12×18", price: "28.00" },
-        { id: 2, label: "Poster · 24×36", price: "48.00" },
-        { id: 3, label: "Framed poster · 12×18", price: "72.00" },
-        { id: 4, label: "Framed poster · 24×36", price: "128.00" },
-      ],
+      prints: entry.prints ?? defaultPrints,
+      crops: (entry.crops ?? []).map((crop) => {
+        const file = join(samples, crop.file);
+        if (!existsSync(file)) {
+          throw new Error(`Missing sample crop: ${file}`);
+        }
+        return {
+          name: `${crop.label}.jpg`,
+          label: crop.label,
+          lightbox: `/photos/${crop.file}`,
+          prints: crop.prints ?? [],
+        };
+      }),
       lastModified: "2026-11-04T18:00:00Z",
     });
   }

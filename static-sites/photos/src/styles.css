@@ -255,6 +255,35 @@ body {
   color: var(--fg);
 }
 
+.crops {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem 1rem;
+  margin-top: 0.9rem;
+}
+
+.crops[hidden] {
+  display: none;
+}
+
+.crops > span {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.crop-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1rem;
+}
+
+.crop-options button[aria-current="true"] {
+  color: var(--fg);
+  text-decoration: underline;
+  text-underline-offset: 0.3em;
+}
+
 .buy {
   display: flex;
   flex-wrap: wrap;

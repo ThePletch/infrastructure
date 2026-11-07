@@ -8,6 +8,13 @@ type PrintOption = {
   price: string;
 };
 
+type Crop = {
+  name: string;
+  label: string;
+  lightbox: string;
+  prints: PrintOption[];
+};
+
 type Photo = {
   thumbnail: string;
   lightbox: string;
@@ -16,6 +23,7 @@ type Photo = {
   description: string;
   tags: string[];
   prints: PrintOption[];
+  crops: Crop[];
   lastModified: string;
 };
 
@@ -35,6 +43,8 @@ const lightboxDescription = mustQuery<HTMLElement>("#lightbox .description");
 const lightboxTags = mustQuery<HTMLElement>("#lightbox .lightbox-tags");
 const prevButton = mustQuery<HTMLButtonElement>("#lightbox .prev");
 const nextButton = mustQuery<HTMLButtonElement>("#lightbox .next");
+const cropsEl = mustQuery<HTMLElement>("#crops");
+const cropOptions = mustQuery<HTMLElement>("#crops .crop-options");
 const buyForm = mustQuery<HTMLFormElement>("#buy");
 const printSelect = mustQuery<HTMLSelectElement>("#print-variant");
 const buyStatus = mustQuery<HTMLElement>(".buy-status");
@@ -42,6 +52,7 @@ const buyStatus = mustQuery<HTMLElement>(".buy-status");
 let photos: Photo[] = [];
 let pagePhotos: Photo[] = [];
 let lightboxIndex = 0;
+let cropIndex = -1;
 
 function mustQuery<T extends Element>(selector: string): T {
   const el = document.querySelector(selector);
@@ -212,6 +223,7 @@ function applyState(state: GalleryState, push: boolean): void {
 
 function openLightbox(index: number): void {
   lightboxIndex = index;
+  cropIndex = -1;
   paintLightbox();
   if (!lightbox.open) {
     lightbox.showModal();
@@ -224,8 +236,12 @@ function paintLightbox(): void {
     lightbox.close();
     return;
   }
-  lightboxImage.src = photo.lightbox;
-  lightboxImage.alt = photo.title;
+  if (cropIndex >= photo.crops.length) {
+    cropIndex = -1;
+  }
+  const crop = cropIndex >= 0 ? photo.crops[cropIndex] : null;
+  lightboxImage.src = crop ? crop.lightbox : photo.lightbox;
+  lightboxImage.alt = crop ? `${photo.title}, ${crop.label}` : photo.title;
   lightboxTitle.textContent = photo.title;
   lightboxDescription.textContent = photo.description;
   lightboxDescription.hidden = photo.description.length === 0;
@@ -243,7 +259,33 @@ function paintLightbox(): void {
     item.append(button);
     lightboxTags.append(item);
   }
-  paintBuy(photo);
+  paintCrops(photo);
+  paintBuy(crop ? crop.prints : photo.prints);
+}
+
+function paintCrops(photo: Photo): void {
+  cropOptions.replaceChildren();
+  if (photo.crops.length === 0) {
+    cropsEl.hidden = true;
+    return;
+  }
+  cropsEl.hidden = false;
+  const choices = ["Original", ...photo.crops.map((crop) => crop.label)];
+  for (const [index, label] of choices.entries()) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "text-button";
+    button.textContent = label;
+    const selected = index === 0 ? cropIndex < 0 : cropIndex === index - 1;
+    if (selected) {
+      button.setAttribute("aria-current", "true");
+    }
+    button.addEventListener("click", () => {
+      cropIndex = index === 0 ? -1 : index - 1;
+      paintLightbox();
+    });
+    cropOptions.append(button);
+  }
 }
 
 function stepLightbox(delta: number): void {
@@ -252,19 +294,20 @@ function stepLightbox(delta: number): void {
     return;
   }
   lightboxIndex = (lightboxIndex + delta + count) % count;
+  cropIndex = -1;
   paintLightbox();
 }
 
-function paintBuy(photo: Photo): void {
+function paintBuy(prints: PrintOption[]): void {
   printSelect.replaceChildren();
   buyStatus.hidden = true;
   buyStatus.textContent = "";
-  if (photo.prints.length === 0) {
+  if (prints.length === 0) {
     buyForm.hidden = true;
     return;
   }
   buyForm.hidden = false;
-  for (const option of photo.prints) {
+  for (const option of prints) {
     const item = document.createElement("option");
     item.value = String(option.id);
     item.textContent = option.price ? `${option.label} — $${option.price}` : option.label;
@@ -380,6 +423,10 @@ async function loadPhotos(): Promise<void> {
   photos = payload.photos.filter(isPhoto).map((photo) => ({
     ...photo,
     prints: printsOf(photo).filter(isPrint),
+    crops: cropsOf(photo).filter(isCrop).map((crop) => ({
+      ...crop,
+      prints: printsOf(crop).filter(isPrint),
+    })),
   }));
 }
 
@@ -400,8 +447,25 @@ function isPhoto(value: unknown): value is Photo {
   );
 }
 
-function printsOf(photo: Partial<Photo>): unknown[] {
+function printsOf(photo: { prints?: unknown }): unknown[] {
   return Array.isArray(photo.prints) ? photo.prints : [];
+}
+
+function cropsOf(photo: Partial<Photo>): unknown[] {
+  return Array.isArray(photo.crops) ? photo.crops : [];
+}
+
+function isCrop(value: unknown): value is Crop {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const crop = value as Partial<Crop>;
+  return (
+    typeof crop.name === "string" &&
+    typeof crop.label === "string" &&
+    crop.label.length > 0 &&
+    typeof crop.lightbox === "string"
+  );
 }
 
 function isPrint(value: unknown): value is PrintOption {
