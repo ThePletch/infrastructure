@@ -1,6 +1,7 @@
 locals {
   photo_prefix           = endswith(var.photo_prefix, "/") ? var.photo_prefix : "${var.photo_prefix}/"
   photo_index_key        = "${local.photo_prefix}_index.json"
+  manifest_cache_ttl     = 60
   namified_domain        = replace(var.domain_name, ".", "-")
   manifest_origin        = "lambda-photo-manifest"
   shop_origin            = "lambda-photo-shop"

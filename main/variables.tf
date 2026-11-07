@@ -30,6 +30,13 @@ variable "mxroute" {
   })
 }
 
+variable "mxroute_credentials" {
+  type = object({
+    api_key = string
+    api_username = string
+  })
+}
+
 variable "mxroute_mailbox_password" {
   description = "Password for the primary MXRoute mailbox (set via TF_VAR_mxroute_mailbox_password). Write-only; not stored in state."
   type        = string
@@ -65,8 +72,16 @@ variable "sites" {
     aliases        = optional(list(string), [])
     redirects      = optional(map(string), {})
     contact_email  = string
-    photo_prefix   = optional(string, "")
   }))
+}
+
+variable "photo_site" {
+  type = object({
+    subdomain = string
+    base_domain = string
+    contact_email  = string
+    photo_prefix   = string
+  })
 }
 
 variable "printful_api_key" {

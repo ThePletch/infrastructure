@@ -5,5 +5,6 @@ provider "aws" {
 
 provider "mxroute" {
   server = var.mxroute.server
-  # username and api_key via MXROUTE_USERNAME / MXROUTE_API_KEY
+  api_key = var.mxroute_credentials.api_key
+  username = var.mxroute_credentials.api_username
 }

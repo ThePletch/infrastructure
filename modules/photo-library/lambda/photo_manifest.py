@@ -1,5 +1,8 @@
+import base64
+import hashlib
 import json
 import os
+import time
 from datetime import timezone
 from urllib.parse import quote
 
@@ -8,19 +11,105 @@ from botocore.exceptions import ClientError
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif"}
 
+# DER-encoded DigestInfo header for SHA-256, prepended to the hash in
+# PKCS #1 v1.5 signatures (RFC 8017, section 9.2).
+SHA256_DIGEST_INFO = bytes.fromhex("3031300d060960864801650304020105000420")
+
 bucket = os.environ["PHOTO_BUCKET"]
 prefix = os.environ["PHOTO_PREFIX"]
 index_key = os.environ["INDEX_KEY"]
+cache_ttl = int(os.environ["CACHE_TTL_SECONDS"])
+url_ttl = int(os.environ["URL_TTL_SECONDS"])
+site_origin = os.environ["SITE_ORIGIN"]
+signing_key_id = os.environ["SIGNING_KEY_ID"]
 
 s3 = boto3.client("s3")
+ssm = boto3.client("ssm")
+
+
+def _load_signing_key():
+    response = ssm.get_parameter(Name=os.environ["SIGNING_KEY_PARAM"], WithDecryption=True)
+    pem = response["Parameter"]["Value"]
+    body = "".join(line for line in pem.splitlines() if not line.startswith("-----"))
+    return _parse_rsa_private_key(base64.b64decode(body))
+
+
+def _der_read(data, offset):
+    tag = data[offset]
+    length = data[offset + 1]
+    offset += 2
+    if length & 0x80:
+        size = length & 0x7F
+        length = int.from_bytes(data[offset : offset + size], "big")
+        offset += size
+    return tag, data[offset : offset + length], offset + length
+
+
+def _der_sequence(data):
+    items = []
+    offset = 0
+    while offset < len(data):
+        tag, value, offset = _der_read(data, offset)
+        items.append((tag, value))
+    return items
+
+
+def _parse_rsa_private_key(der):
+    """Return (n, d) from a PKCS #8 or PKCS #1 RSA private key."""
+    _, body, _ = _der_read(der, 0)
+    fields = _der_sequence(body)
+    if fields[1][0] == 0x30:
+        # PKCS #8: version, AlgorithmIdentifier, OCTET STRING(RSAPrivateKey)
+        _, body, _ = _der_read(fields[2][1], 0)
+        fields = _der_sequence(body)
+    # RSAPrivateKey: version, n, e, d, ...
+    n = int.from_bytes(fields[1][1], "big")
+    d = int.from_bytes(fields[3][1], "big")
+    return n, d
+
+
+signing_key = _load_signing_key()
+
+
+def _rsa_sha256_sign(message):
+    n, d = signing_key
+    size = (n.bit_length() + 7) // 8
+    digest = SHA256_DIGEST_INFO + hashlib.sha256(message).digest()
+    encoded = b"\x00\x01" + b"\xff" * (size - len(digest) - 3) + b"\x00" + digest
+    signature = pow(int.from_bytes(encoded, "big"), d, n)
+    return signature.to_bytes(size, "big")
+
+
+def _cloudfront_b64(data):
+    return base64.b64encode(data).decode().translate(str.maketrans("+=/", "-_~"))
+
+
+def _sign_url(url, expires):
+    policy = json.dumps(
+        {
+            "Statement": [
+                {
+                    "Resource": url,
+                    "Condition": {"DateLessThan": {"AWS:EpochTime": expires}},
+                }
+            ]
+        },
+        separators=(",", ":"),
+    )
+    signature = _cloudfront_b64(_rsa_sha256_sign(policy.encode()))
+    return (
+        f"{url}?Expires={expires}&Signature={signature}"
+        f"&Key-Pair-Id={signing_key_id}&Hash-Algorithm=SHA256"
+    )
 
 
 def lambda_handler(event, context):
+    expires = int(time.time()) + url_ttl
     photos = _list_photos()
     index = _load_index()
     published = []
     for item in photos:
-        photo = _decorate(item, index)
+        photo = _decorate(item, index, expires)
         if photo:
             published.append(photo)
     body = {"photos": published}
@@ -28,7 +117,7 @@ def lambda_handler(event, context):
         "statusCode": 200,
         "headers": {
             "content-type": "application/json; charset=utf-8",
-            "cache-control": "public, max-age=60",
+            "cache-control": f"public, max-age={cache_ttl}",
         },
         "body": json.dumps(body),
     }
@@ -83,7 +172,7 @@ def _load_index():
     return payload
 
 
-def _decorate(photo, index):
+def _decorate(photo, index, expires):
     key = photo["key"]
     relative = key[len(prefix) :]
     entry = index.get(key) or {}
@@ -95,8 +184,8 @@ def _decorate(photo, index):
     prints = entry.get("prints") or []
     if not isinstance(prints, list):
         prints = []
-    thumbnail = _derivative_path(entry.get("thumbnail"), "_thumbs/")
-    lightbox = _derivative_path(entry.get("lightbox"), "_lightbox/")
+    thumbnail = _derivative_url(entry.get("thumbnail"), "_thumbs/", expires)
+    lightbox = _derivative_url(entry.get("lightbox"), "_lightbox/", expires)
     if not thumbnail or not lightbox:
         return None
     return {
@@ -111,10 +200,10 @@ def _decorate(photo, index):
     }
 
 
-def _derivative_path(key, folder):
+def _derivative_url(key, folder, expires):
     if not isinstance(key, str) or not key.startswith(f"{prefix}{folder}"):
         return None
-    return "/" + quote(key, safe="/")
+    return _sign_url(f"{site_origin}/{quote(key, safe='/')}", expires)
 
 
 def _is_print(item):

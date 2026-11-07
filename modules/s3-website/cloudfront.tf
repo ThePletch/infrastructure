@@ -14,6 +14,20 @@ locals {
     for index, behavior in var.ordered_cache_behaviors :
     format("%03d", index) => behavior
   }
+  signed_origin   = "S3-signed-${var.domain_name}"
+  signed_prefixes = var.signed_paths == null ? [] : var.signed_paths.prefixes
+}
+
+resource "aws_cloudfront_origin_access_control" "signed" {
+  count                             = var.signed_paths == null ? 0 : 1
+  name                              = "${replace(var.domain_name, ".", "-")}-s3"
+  origin_access_control_origin_type = "s3"
+  signing_behavior                  = "always"
+  signing_protocol                  = "sigv4"
+}
+
+data "aws_cloudfront_cache_policy" "caching_optimized" {
+  name = "Managed-CachingOptimized"
 }
 
 resource "aws_cloudfront_distribution" "website_cdn" {
@@ -55,6 +69,17 @@ resource "aws_cloudfront_distribution" "website_cdn" {
         origin_protocol_policy = "https-only"
         origin_ssl_protocols   = ["TLSv1.2"]
       }
+    }
+  }
+
+  # The website endpoint above can't authenticate to S3, so signed paths
+  # read from the REST endpoint through Origin Access Control instead.
+  dynamic "origin" {
+    for_each = aws_cloudfront_origin_access_control.signed
+    content {
+      domain_name              = module.base.bucket_regional_domain_name
+      origin_id                = local.signed_origin
+      origin_access_control_id = origin.value.id
     }
   }
 
@@ -110,6 +135,22 @@ resource "aws_cloudfront_distribution" "website_cdn" {
           include_body = lambda_function_association.value.include_body
         }
       }
+    }
+  }
+
+  # Managed-CachingOptimized leaves query strings out of the cache key, so
+  # every signature for an object shares one cache entry.
+  dynamic "ordered_cache_behavior" {
+    for_each = local.signed_prefixes
+    content {
+      path_pattern           = "/${ordered_cache_behavior.value}*"
+      allowed_methods        = ["GET", "HEAD"]
+      cached_methods         = ["GET", "HEAD"]
+      target_origin_id       = local.signed_origin
+      viewer_protocol_policy = "redirect-to-https"
+      cache_policy_id        = data.aws_cloudfront_cache_policy.caching_optimized.id
+      compress               = true
+      trusted_key_groups     = [var.signed_paths.trusted_key_group_id]
     }
   }
 

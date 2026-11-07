@@ -13,6 +13,11 @@ data "aws_iam_policy_document" "photo_manifest" {
     actions   = ["s3:GetObject"]
     resources = ["${module.website.bucket_arn}/${local.photo_index_key}"]
   }
+
+  statement {
+    actions   = ["ssm:GetParameter"]
+    resources = [aws_ssm_parameter.signing_private_key.arn]
+  }
 }
 
 module "photo_manifest" {
@@ -28,9 +33,14 @@ module "photo_manifest" {
   timeout                     = 30
 
   environment_config = {
-    PHOTO_BUCKET = module.website.bucket_name
-    PHOTO_PREFIX = local.photo_prefix
-    INDEX_KEY    = local.photo_index_key
+    PHOTO_BUCKET      = module.website.bucket_name
+    PHOTO_PREFIX      = local.photo_prefix
+    INDEX_KEY         = local.photo_index_key
+    CACHE_TTL_SECONDS = tostring(local.manifest_cache_ttl)
+    URL_TTL_SECONDS   = tostring(local.manifest_cache_ttl * 2)
+    SITE_ORIGIN       = local.site_origin
+    SIGNING_KEY_ID    = aws_cloudfront_public_key.signing.id
+    SIGNING_KEY_PARAM = aws_ssm_parameter.signing_private_key.name
   }
 }
 
@@ -48,8 +58,8 @@ resource "aws_cloudfront_origin_access_control" "photo_manifest" {
 
 resource "aws_cloudfront_cache_policy" "photo_manifest" {
   name        = "${local.namified_domain}-photo-manifest"
-  default_ttl = 60
-  max_ttl     = 300
+  default_ttl = local.manifest_cache_ttl
+  max_ttl     = local.manifest_cache_ttl
   min_ttl     = 0
 
   parameters_in_cache_key_and_forwarded_to_origin {
