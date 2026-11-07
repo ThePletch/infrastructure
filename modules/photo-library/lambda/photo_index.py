@@ -12,7 +12,17 @@ from urllib.parse import quote, unquote_plus
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif"}
 INDEX_NAME = "_index.json"
-HEADER_RANGE = "bytes=0-262143"
+THUMBNAIL_DIR = "_thumbs"
+LIGHTBOX_DIR = "_lightbox"
+# Gallery tiles are 3:2. 300x200 fills that frame on a 1x screen.
+THUMBNAIL_SIZE = (300, 200)
+# The lightbox is at most 72rem wide, so 1280px covers it at 1x.
+LIGHTBOX_MAX_EDGE = 1280
+DERIVATIVE_QUALITY = 85
+HEADER_BYTES = 262144
+TAIL_BYTES = 262144
+HEADER_RANGE = f"bytes=0-{HEADER_BYTES - 1}"
+TAIL_RANGE = f"bytes=-{TAIL_BYTES}"
 MAX_RETRIES = 5
 
 DC_NS = "http://purl.org/dc/elements/1.1/"
@@ -53,17 +63,21 @@ def _handle_record(record):
     prefix = _env("PHOTO_PREFIX")
     if not key.startswith(prefix):
         return
-    if key == _index_key() or key.endswith("/" + INDEX_NAME):
+    if key == _index_key() or key.endswith("/" + INDEX_NAME) or _is_derivative(key):
         return
     event_name = record.get("eventName", "")
     if event_name.startswith("ObjectRemoved"):
         _delete_printful(key)
+        _delete_derivatives(key)
         _update_index(remove_key=key)
         return
     if not _is_image(key):
         _update_index(remove_key=key)
         return
     metadata = _read_metadata(key)
+    thumbnail, lightbox = _write_derivatives(key)
+    metadata["thumbnail"] = thumbnail
+    metadata["lightbox"] = lightbox
     _update_index(set_key=key, metadata=metadata)
 
 
@@ -72,13 +86,134 @@ def _is_image(key):
     return ext in IMAGE_EXTS
 
 
+def _derivative_prefix(folder):
+    return f"{_env('PHOTO_PREFIX')}{folder}/"
+
+
+def _is_derivative(key):
+    return key.startswith(_derivative_prefix(THUMBNAIL_DIR)) or key.startswith(
+        _derivative_prefix(LIGHTBOX_DIR)
+    )
+
+
+def _derivative_key(key, folder):
+    # Keep the original filename so cat.jpg and cat.png do not share a derivative.
+    prefix = _env("PHOTO_PREFIX")
+    relative = key[len(prefix) :]
+    return f"{prefix}{folder}/{relative}.jpg"
+
+
+def _write_derivatives(key):
+    response = _s3().get_object(Bucket=_bucket(), Key=key)
+    thumbnail_body, lightbox_body = _derivative_bytes(response["Body"].read())
+    thumbnail_key = _derivative_key(key, THUMBNAIL_DIR)
+    lightbox_key = _derivative_key(key, LIGHTBOX_DIR)
+    _put_jpeg(thumbnail_key, thumbnail_body)
+    _put_jpeg(lightbox_key, lightbox_body)
+    return thumbnail_key, lightbox_key
+
+
+def _delete_derivatives(key):
+    for folder in (THUMBNAIL_DIR, LIGHTBOX_DIR):
+        _s3().delete_object(Bucket=_bucket(), Key=_derivative_key(key, folder))
+
+
+def _put_jpeg(key, body):
+    _s3().put_object(
+        Bucket=_bucket(),
+        Key=key,
+        Body=body,
+        ContentType="image/jpeg",
+    )
+
+
+def _derivative_bytes(data):
+    import io
+
+    from PIL import Image, ImageOps
+
+    # Stacked frames can sit just over Pillow's default decompression-bomb cap.
+    Image.MAX_IMAGE_PIXELS = 250_000_000
+    with Image.open(io.BytesIO(data)) as image:
+        if image.format == "JPEG":
+            image.draft("RGB", (LIGHTBOX_MAX_EDGE, LIGHTBOX_MAX_EDGE))
+        oriented = ImageOps.exif_transpose(image)
+        flat = _flatten_rgb(oriented)
+        lightbox = flat.copy()
+        lightbox.thumbnail(
+            (LIGHTBOX_MAX_EDGE, LIGHTBOX_MAX_EDGE),
+            Image.Resampling.LANCZOS,
+        )
+        thumbnail = _cover_crop(flat, *THUMBNAIL_SIZE)
+        return _jpeg_bytes(thumbnail), _jpeg_bytes(lightbox)
+
+
+def _cover_crop(image, width, height):
+    # Scale so the frame covers width x height, then cut the overflow from
+    # the center. A source smaller than the target is cropped to the same
+    # aspect and left at its own size.
+    from PIL import Image
+
+    source_w, source_h = image.size
+    if source_w < 1 or source_h < 1:
+        return image
+    scale = max(width / source_w, height / source_h)
+    if scale < 1:
+        resized_w = max(width, int(round(source_w * scale)))
+        resized_h = max(height, int(round(source_h * scale)))
+        resized = image.resize((resized_w, resized_h), Image.Resampling.LANCZOS)
+        left = (resized_w - width) // 2
+        top = (resized_h - height) // 2
+        return resized.crop((left, top, left + width, top + height))
+    if source_w * height >= source_h * width:
+        crop_h = source_h
+        crop_w = max(1, min(source_w, source_h * width // height))
+    else:
+        crop_w = source_w
+        crop_h = max(1, min(source_h, source_w * height // width))
+    left = (source_w - crop_w) // 2
+    top = (source_h - crop_h) // 2
+    return image.crop((left, top, left + crop_w, top + crop_h))
+
+
+def _jpeg_bytes(image):
+    import io
+
+    out = io.BytesIO()
+    image.save(out, format="JPEG", quality=DERIVATIVE_QUALITY, progressive=True)
+    return out.getvalue()
+
+
+def _flatten_rgb(image):
+    from PIL import Image
+
+    if image.mode in ("RGBA", "LA") or (
+        image.mode == "P" and "transparency" in image.info
+    ):
+        rgba = image.convert("RGBA")
+        background = Image.new("RGB", rgba.size, (0, 0, 0))
+        background.paste(rgba, mask=rgba.getchannel("A"))
+        return background
+    if image.mode == "RGB":
+        return image
+    return image.convert("RGB")
+
+
 def _read_metadata(key):
     empty = {"title": "", "description": "", "tags": []}
     try:
-        header = _get_header(key)
+        header, total = _get_object_range(key, HEADER_RANGE)
         parsed = extract_metadata(header)
     except Exception:
         return empty
+    # Older copies of the tagging script wrote PNG and WebP XMP at the end
+    # of the file, past this prefix. Read the tail before giving up.
+    if _trailing_metadata_unread(header, total):
+        try:
+            tail, _ = _get_object_range(key, TAIL_RANGE)
+        except Exception:
+            tail = b""
+        _merge(parsed, _xmp_in_bytes(tail))
     meta = {
         "title": parsed.get("title") or "",
         "description": parsed.get("description") or "",
@@ -92,19 +227,50 @@ def _read_metadata(key):
     return meta
 
 
-def _get_header(key):
+def _get_object_range(key, byte_range):
     from botocore.exceptions import ClientError
 
     for attempt in range(3):
         try:
-            response = _s3().get_object(Bucket=_bucket(), Key=key, Range=HEADER_RANGE)
-            return response["Body"].read()
+            response = _s3().get_object(Bucket=_bucket(), Key=key, Range=byte_range)
+            return response["Body"].read(), _object_size(response)
         except ClientError as err:
             code = err.response["Error"]["Code"]
             if code in ("NoSuchKey", "404") and attempt < 2:
                 time.sleep(0.5)
                 continue
             raise
+
+
+def _object_size(response):
+    content_range = response.get("ContentRange") or ""
+    if "/" in content_range:
+        total = content_range.rsplit("/", 1)[-1]
+        return int(total) if total.isdigit() else None
+    length = response.get("ContentLength")
+    return length if isinstance(length, int) else None
+
+
+def _trailing_metadata_unread(header, total):
+    if len(header) < 12:
+        return False
+    png = header.startswith(b"\x89PNG\r\n\x1a\n")
+    webp = header.startswith(b"RIFF") and header[8:12] == b"WEBP"
+    if not png and not webp:
+        return False
+    if b"<x:xmpmeta" in header or b"<xmpmeta" in header:
+        return False
+    if total is None:
+        return len(header) >= HEADER_BYTES
+    return total > len(header)
+
+
+def _xmp_in_bytes(data):
+    for marker in (b"<x:xmpmeta", b"<xmpmeta"):
+        start = data.find(marker)
+        if start >= 0:
+            return _parse_xmp(data[start:])
+    return {}
 
 
 def _update_index(remove_key=None, set_key=None, metadata=None):
@@ -519,7 +685,9 @@ PRINTFUL_API = "https://api.printful.com"
 POSTER_PRODUCT_ID = 1
 FRAMED_PRODUCT_ID = 2
 MIN_DPI = 150
-RATIO_TOLERANCE = 0.025
+# Short/long side. 5% still leaves each print ratio closer to itself than to
+# the next one, and keeps a near-square such as 2946×2866 on the square sizes.
+RATIO_TOLERANCE = 0.05
 RETAIL_MARKUP = 2.0
 SIZE_SETS = (
     (1.0, ((10, 10), (12, 12), (16, 16))),
@@ -530,6 +698,7 @@ SIZE_SETS = (
 
 _printful_store_id = None
 _printful_catalog = {}
+_printful_by_external_id = None
 
 
 def _printful_token():
@@ -544,6 +713,11 @@ def _public_file_url(key):
 def _sync_printful(key, meta):
     if not _printful_token():
         return []
+    # A product already stored under this object key is reused. Updating it
+    # would drop any variant whose sync id was omitted and create another.
+    existing = _existing_printful_product(key)
+    if existing:
+        return _print_offerings(existing)
     width = meta.get("width") or 0
     height = meta.get("height") or 0
     sizes = _eligible_sizes(width, height)
@@ -563,25 +737,77 @@ def _sync_printful(key, meta):
         },
         "sync_variants": variants,
     }
-    existing = _printful_request("GET", f"/store/products/@{quote(key, safe='')}")
-    if existing and existing.get("sync_product"):
-        product_id = existing["sync_product"]["id"]
-        result = _printful_request("PUT", f"/store/products/{product_id}", payload)
-    else:
-        result = _printful_request("POST", "/store/products", payload)
-    if not result:
+    saved = _printful_request("POST", "/store/products", payload)
+    if not saved:
+        # The @external_id route misses keys that contain a slash, so a product
+        # created earlier can be absent from the first lookup. A failed create
+        # means it is already there; read it back instead of leaving prints blank.
+        existing = _existing_printful_product(key, refresh=True)
+        if existing:
+            return _print_offerings(existing)
         return []
-    return _print_offerings(result)
+    # Create returns only the product summary (id, name, variant count).
+    # The sync variant ids the gallery sells are on the product read.
+    product_id = saved.get("id") or (saved.get("sync_product") or {}).get("id")
+    if product_id:
+        detail = _printful_request("GET", f"/store/products/{product_id}")
+        if detail:
+            return _print_offerings(detail)
+    return _print_offerings(saved)
+
+
+def _existing_printful_product(key, refresh=False):
+    # GET /store/products/@{external_id} 404s when the id contains a slash,
+    # which every photo key does. The store list returns those ids intact.
+    product_id = _printful_product_id(key, refresh=refresh)
+    if not product_id:
+        return None
+    return _printful_request("GET", f"/store/products/{product_id}")
+
+
+def _printful_product_id(key, refresh=False):
+    global _printful_by_external_id
+    if refresh or _printful_by_external_id is None:
+        _printful_by_external_id = _load_printful_product_ids()
+    return _printful_by_external_id.get(key)
+
+
+def _load_printful_product_ids():
+    found = {}
+    offset = 0
+    while True:
+        page = _printful_request(
+            "GET", f"/store/products?offset={offset}&limit=100", unwrap=False
+        )
+        if not isinstance(page, dict):
+            break
+        items = page.get("result") or []
+        if isinstance(items, dict):
+            items = [items]
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            external = item.get("external_id")
+            product_id = item.get("id")
+            if external and product_id is not None:
+                found[external] = product_id
+        paging = page.get("paging") or {}
+        total = paging.get("total")
+        offset += len(items)
+        if not items or total is None or offset >= total:
+            break
+    return found
 
 
 def _delete_printful(key):
     if not _printful_token():
         return
-    existing = _printful_request("GET", f"/store/products/@{quote(key, safe='')}")
-    if not existing or not existing.get("sync_product"):
+    product_id = _printful_product_id(key, refresh=True)
+    if not product_id:
         return
-    product_id = existing["sync_product"]["id"]
     _printful_request("DELETE", f"/store/products/{product_id}")
+    if _printful_by_external_id is not None:
+        _printful_by_external_id.pop(key, None)
 
 
 def _eligible_sizes(width, height):
@@ -654,8 +880,26 @@ def _match_catalog_variant(catalog, width_in, height_in, frame_color):
     return None
 
 
+_SIZE_PAIR = re.compile(
+    r"(\d+(?:\.\d+)?)[^\d.x×✕]*[x×✕][^\d.]*(\d+(?:\.\d+)?)",
+    re.IGNORECASE,
+)
+
+
 def _normalize_size(value):
-    return (value or "").lower().replace(" ", "").replace("×", "x")
+    # Catalog sizes look like 12″×18″. Compare the numbers so inch marks and
+    # the multiply sign do not hide a 12x18 poster.
+    match = _SIZE_PAIR.search(value or "")
+    if not match:
+        return ""
+    return "x".join(_size_number(part) for part in match.groups())
+
+
+def _size_number(part):
+    number = float(part)
+    if number.is_integer():
+        return str(int(number))
+    return format(number, "f").rstrip("0").rstrip(".")
 
 
 def _retail_price(catalog, variant_id):
@@ -674,29 +918,45 @@ def _retail_price(catalog, variant_id):
 def _print_offerings(result):
     offerings = []
     for variant in result.get("sync_variants") or []:
+        sync_id = variant.get("id")
+        if sync_id is None:
+            continue
         product = variant.get("product") or {}
-        catalog_id = product.get("variant_id")
-        name = variant.get("name") or ""
-        kind = "Framed poster" if "framed" in name.lower() else "Poster"
-        size = _size_from_name(name)
-        label = f"{kind} · {size}" if size else kind
         offerings.append(
             {
-                "id": variant.get("id"),
-                "label": label,
-                "price": variant.get("retail_price") or "",
-                "variant_id": catalog_id,
+                "id": sync_id,
+                "label": _offering_label(variant),
+                "price": str(variant.get("retail_price") or ""),
+                "variant_id": product.get("variant_id") or variant.get("variant_id"),
             }
         )
     return offerings
 
 
-def _size_from_name(name):
-    match = re.search(r"(\d+\s*[x×]\s*\d+)", name, re.I)
-    return match.group(1).replace(" ", "") if match else ""
+def _offering_label(variant):
+    # external_id is "{key}:{poster|framed}:{width}x{height}". Printful's own
+    # name often puts the size behind an inch mark ("18″×24″"), which a plain
+    # width×height search misses.
+    external = variant.get("external_id") or ""
+    parts = external.rsplit(":", 2)
+    if len(parts) == 3 and parts[1] in ("poster", "framed"):
+        size = _normalize_size(parts[2])
+        if size:
+            kind = "Framed poster" if parts[1] == "framed" else "Poster"
+            return f"{kind} · {size}"
+    product_name = (variant.get("product") or {}).get("name") or ""
+    name = variant.get("name") or ""
+    framed = "framed" in name.lower() or "framed" in product_name.lower()
+    kind = "Framed poster" if framed else "Poster"
+    size = (
+        _normalize_size(variant.get("size") or "")
+        or _normalize_size(name)
+        or _normalize_size(product_name)
+    )
+    return f"{kind} · {size}" if size else kind
 
 
-def _printful_request(method, path, payload=None):
+def _printful_request(method, path, payload=None, unwrap=True):
     token = _printful_token()
     if not token:
         return None
@@ -735,6 +995,8 @@ def _printful_request(method, path, payload=None):
         parsed = json.loads(raw)
     except ValueError:
         return None
+    if not unwrap:
+        return parsed
     return parsed.get("result", parsed)
 
 

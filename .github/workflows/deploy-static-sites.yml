@@ -43,4 +43,4 @@ jobs:
         run: >
           aws cloudfront create-invalidation
           --distribution-id ${{ vars.PHOTOS_CLOUDFRONT_DISTRIBUTION_ID }}
-          --paths / /index.html /contact.html /error.html /cropped_final.png /assets/*
+          --paths / /index.html /contact.html /error.html /cropped_final.png /cropped_final.jpg /assets/*

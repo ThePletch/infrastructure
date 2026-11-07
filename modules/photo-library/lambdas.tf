@@ -95,6 +95,35 @@ data "aws_iam_policy_document" "photo_index" {
     actions   = ["s3:PutObject"]
     resources = ["${module.website.bucket_arn}/${local.photo_index_key}"]
   }
+
+  statement {
+    actions = [
+      "s3:PutObject",
+      "s3:DeleteObject",
+    ]
+    resources = [
+      "${module.website.bucket_arn}/${local.photo_prefix}_thumbs/*",
+      "${module.website.bucket_arn}/${local.photo_prefix}_lightbox/*",
+    ]
+  }
+}
+
+data "external" "pillow_layer" {
+  program = ["python3", "${path.module}/lambda/build_pillow_layer.py"]
+}
+
+data "archive_file" "pillow_layer" {
+  type        = "zip"
+  source_dir  = data.external.pillow_layer.result.dir
+  output_path = "${path.module}/files/pillow-py312-x86_64.zip"
+}
+
+resource "aws_lambda_layer_version" "pillow" {
+  layer_name               = "${local.namified_domain}-pillow"
+  filename                 = data.archive_file.pillow_layer.output_path
+  source_code_hash         = data.archive_file.pillow_layer.output_base64sha256
+  compatible_runtimes      = ["python3.12"]
+  compatible_architectures = ["x86_64"]
 }
 
 module "photo_index" {
@@ -107,8 +136,9 @@ module "photo_index" {
   iam_policy                  = data.aws_iam_policy_document.photo_index.json
   error_notifications_email   = var.ops_contact
   missing_data_alarm_behavior = "notBreaching"
-  memory_mb                   = 512
-  timeout                     = 60
+  memory_mb                   = 2048
+  timeout                     = 180
+  layer_arns                  = [aws_lambda_layer_version.pillow.arn]
 
   environment_config = merge(
     {

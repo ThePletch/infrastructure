@@ -87,7 +87,7 @@ function copyStatic() {
   copy(join(root, "index.html"), join(dist, "index.html"));
   copy(join(root, "error.html"), join(dist, "error.html"));
   copy(join(root, "contact.html"), join(dist, "contact.html"));
-  copy(join(root, "cropped_final.png"), join(dist, "cropped_final.png"));
+  copy(join(root, "cropped_final.jpg"), join(dist, "cropped_final.jpg"));
   copy(join(root, "src/styles.css"), join(dist, "assets/styles.css"));
   loadPhotos();
 }

@@ -18,7 +18,12 @@ s3 = boto3.client("s3")
 def lambda_handler(event, context):
     photos = _list_photos()
     index = _load_index()
-    body = {"photos": [_decorate(photo, index) for photo in photos]}
+    published = []
+    for item in photos:
+        photo = _decorate(item, index)
+        if photo:
+            published.append(photo)
+    body = {"photos": published}
     return {
         "statusCode": 200,
         "headers": {
@@ -55,6 +60,9 @@ def _list_photos():
 
 
 def _is_image(key):
+    relative = key[len(prefix) :] if key.startswith(prefix) else key
+    if relative.startswith("_thumbs/") or relative.startswith("_lightbox/"):
+        return False
     _, ext = os.path.splitext(key.lower())
     return ext in IMAGE_EXTS
 
@@ -87,8 +95,13 @@ def _decorate(photo, index):
     prints = entry.get("prints") or []
     if not isinstance(prints, list):
         prints = []
+    thumbnail = _derivative_path(entry.get("thumbnail"), "_thumbs/")
+    lightbox = _derivative_path(entry.get("lightbox"), "_lightbox/")
+    if not thumbnail or not lightbox:
+        return None
     return {
-        "url": "/" + quote(key, safe="/"),
+        "thumbnail": thumbnail,
+        "lightbox": lightbox,
         "name": relative,
         "title": title,
         "description": description,
@@ -96,6 +109,12 @@ def _decorate(photo, index):
         "prints": [_decorate_print(item) for item in prints if _is_print(item)],
         "lastModified": photo["lastModified"],
     }
+
+
+def _derivative_path(key, folder):
+    if not isinstance(key, str) or not key.startswith(f"{prefix}{folder}"):
+        return None
+    return "/" + quote(key, safe="/")
 
 
 def _is_print(item):

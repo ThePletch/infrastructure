@@ -44,7 +44,16 @@ module "website" {
         cache_policy_id          = data.aws_cloudfront_cache_policy.caching_disabled.id
         origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer_except_host.id
         compress                 = true
+        lambda_function_associations = [
+          {
+            event_type   = "origin-request"
+            lambda_arn   = aws_lambda_function.payload_hash.qualified_arn
+            include_body = true
+          },
+        ]
       }
     ],
   )
+
+  wait_for = aws_lambda_permission.payload_hash_edge.id
 }

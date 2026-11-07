@@ -17,6 +17,15 @@ locals {
 }
 
 resource "aws_cloudfront_distribution" "website_cdn" {
+  # Callers pass wait_for so this distribution is not updated before a
+  # dependency such as a Lambda@Edge invoke permission exists.
+  lifecycle {
+    precondition {
+      condition     = var.wait_for != null
+      error_message = "wait_for cannot be null."
+    }
+  }
+
   origin {
     # We use the website endpoint instead of the bucket domain
     # to make cloudfront treat it like a website instead of a bucket.
@@ -92,6 +101,15 @@ resource "aws_cloudfront_distribution" "website_cdn" {
       cache_policy_id          = ordered_cache_behavior.value.cache_policy_id
       origin_request_policy_id = ordered_cache_behavior.value.origin_request_policy_id
       compress                 = ordered_cache_behavior.value.compress
+
+      dynamic "lambda_function_association" {
+        for_each = ordered_cache_behavior.value.lambda_function_associations
+        content {
+          event_type   = lambda_function_association.value.event_type
+          lambda_arn   = lambda_function_association.value.lambda_arn
+          include_body = lambda_function_association.value.include_body
+        }
+      }
     }
   }
 

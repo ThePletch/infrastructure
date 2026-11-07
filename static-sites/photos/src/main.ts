@@ -9,7 +9,8 @@ type PrintOption = {
 };
 
 type Photo = {
-  url: string;
+  thumbnail: string;
+  lightbox: string;
   name: string;
   title: string;
   description: string;
@@ -145,7 +146,7 @@ function renderGrid(items: Photo[]): void {
     button.type = "button";
     button.className = "tile";
     const image = document.createElement("img");
-    image.src = photo.url;
+    image.src = photo.thumbnail;
     image.alt = photo.title;
     image.loading = "lazy";
     const caption = document.createElement("span");
@@ -223,7 +224,7 @@ function paintLightbox(): void {
     lightbox.close();
     return;
   }
-  lightboxImage.src = photo.url;
+  lightboxImage.src = photo.lightbox;
   lightboxImage.alt = photo.title;
   lightboxTitle.textContent = photo.title;
   lightboxDescription.textContent = photo.description;
@@ -387,7 +388,8 @@ function isPhoto(value: unknown): value is Photo {
   }
   const photo = value as Partial<Photo>;
   return (
-    typeof photo.url === "string" &&
+    typeof photo.thumbnail === "string" &&
+    typeof photo.lightbox === "string" &&
     typeof photo.name === "string" &&
     typeof photo.title === "string" &&
     typeof photo.description === "string" &&

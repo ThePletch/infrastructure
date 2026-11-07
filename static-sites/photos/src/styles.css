@@ -31,7 +31,7 @@ html::before {
   pointer-events: none;
   background:
     linear-gradient(rgb(5 5 5 / 0.7), rgb(5 5 5 / 0.88)),
-    url("/cropped_final.png") center / cover no-repeat;
+    url("/cropped_final.jpg") center / cover no-repeat;
 }
 
 body {

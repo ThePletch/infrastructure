@@ -2,7 +2,7 @@
   "name": "photos-site",
   "private": true,
   "scripts": {
-    "build": "tsc --noEmit && esbuild src/main.ts --bundle --minify --outfile=dist/assets/main.js && cp index.html dist/index.html && cp error.html dist/error.html && cp contact.html dist/contact.html && cp cropped_final.png dist/cropped_final.png && cp src/styles.css dist/assets/styles.css",
+    "build": "tsc --noEmit && esbuild src/main.ts --bundle --minify --outfile=dist/assets/main.js && cp index.html dist/index.html && cp error.html dist/error.html && cp contact.html dist/contact.html && cp cropped_final.jpg dist/cropped_final.jpg && cp src/styles.css dist/assets/styles.css",
     "preview": "node scripts/preview.mjs"
   },
   "devDependencies": {

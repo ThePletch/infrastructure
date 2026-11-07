@@ -41,6 +41,12 @@ variable "function_url_origins" {
   default = []
 }
 
+variable "wait_for" {
+  type        = string
+  default     = ""
+  description = "Opaque value used to order this distribution after another resource. The value is not sent to AWS."
+}
+
 variable "ordered_cache_behaviors" {
   description = "Path routes, in precedence order, for origins other than the S3 website."
   type = list(object({
@@ -51,6 +57,11 @@ variable "ordered_cache_behaviors" {
     cache_policy_id          = string
     origin_request_policy_id = string
     compress                 = bool
+    lambda_function_associations = optional(list(object({
+      event_type   = string
+      lambda_arn   = string
+      include_body = optional(bool, false)
+    })), [])
   }))
   default = []
 }
