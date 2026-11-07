@@ -11,6 +11,10 @@ import boto3
 from botocore.exceptions import ClientError
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif"}
+# Originals for a gallery photo live at _crops/<parent key>/<filename>.
+# The parent key is every segment after _crops/ except the filename, so a
+# photo named album/orion.jpg keeps crops under _crops/album/orion.jpg/.
+CROPS_DIR = "_crops/"
 
 # DER-encoded DigestInfo header for SHA-256, prepended to the hash in
 # PKCS #1 v1.5 signatures (RFC 8017, section 9.2).
@@ -136,9 +140,18 @@ def lambda_handler(event, context):
         )
         for folder in ("_thumbs/", "_lightbox/")
     }
-    published = []
+    gallery = []
+    crop_items = []
     for item in photos:
-        photo = _decorate(item, index, queries)
+        relative = item["key"][len(prefix) :] if item["key"].startswith(prefix) else item["key"]
+        if relative.startswith(CROPS_DIR):
+            crop_items.append(item)
+        else:
+            gallery.append(item)
+    crops_by_parent = _group_crops(crop_items, index, queries)
+    published = []
+    for item in gallery:
+        photo = _decorate(item, index, queries, crops_by_parent)
         if photo:
             published.append(photo)
     body = {"photos": published}
@@ -201,7 +214,7 @@ def _load_index():
     return payload
 
 
-def _decorate(photo, index, queries):
+def _decorate(photo, index, queries, crops_by_parent):
     key = photo["key"]
     relative = key[len(prefix) :]
     entry = index.get(key) or {}
@@ -210,9 +223,6 @@ def _decorate(photo, index, queries):
     tags = entry.get("tags") or []
     if not isinstance(tags, list):
         tags = []
-    prints = entry.get("prints") or []
-    if not isinstance(prints, list):
-        prints = []
     thumbnail = _derivative_url(entry.get("thumbnail"), "_thumbs/", queries)
     lightbox = _derivative_url(entry.get("lightbox"), "_lightbox/", queries)
     if not thumbnail or not lightbox:
@@ -224,9 +234,59 @@ def _decorate(photo, index, queries):
         "title": title,
         "description": description,
         "tags": [str(tag) for tag in tags],
-        "prints": [_decorate_print(item) for item in prints if _is_print(item)],
+        "prints": _prints(entry),
+        "crops": crops_by_parent.get(relative, []),
         "lastModified": photo["lastModified"],
     }
+
+
+def _group_crops(items, index, queries):
+    grouped = {}
+    for item in items:
+        key = item["key"]
+        relative = key[len(prefix) :] if key.startswith(prefix) else key
+        parts = _crop_parts(relative)
+        if not parts:
+            continue
+        parent, name = parts
+        crop = _decorate_crop(key, name, index, queries)
+        if not crop:
+            continue
+        grouped.setdefault(parent, []).append(crop)
+    for crops in grouped.values():
+        crops.sort(key=lambda crop: (crop["label"].lower(), crop["name"].lower()))
+    return grouped
+
+
+def _crop_parts(relative):
+    if not relative.startswith(CROPS_DIR):
+        return None
+    rest = relative[len(CROPS_DIR) :]
+    parent, sep, name = rest.rpartition("/")
+    if not sep or not parent or not name or name.startswith("."):
+        return None
+    return parent, name
+
+
+def _decorate_crop(key, name, index, queries):
+    entry = index.get(key) or {}
+    lightbox = _derivative_url(entry.get("lightbox"), "_lightbox/", queries)
+    if not lightbox:
+        return None
+    stem, _ext = os.path.splitext(name)
+    return {
+        "name": name,
+        "label": stem or name,
+        "lightbox": lightbox,
+        "prints": _prints(entry),
+    }
+
+
+def _prints(entry):
+    prints = entry.get("prints") or []
+    if not isinstance(prints, list):
+        prints = []
+    return [_decorate_print(item) for item in prints if _is_print(item)]
 
 
 def _derivative_url(key, folder, queries):

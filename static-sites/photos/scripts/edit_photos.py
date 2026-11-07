@@ -5,11 +5,15 @@ Reads and writes the same XMP fields as scripts/tag_image.py. Saving an
 image uploads it back to the gallery bucket, which reindexes that object.
 Bucket, prefix, and region come from Terraform state through gallery_config.py.
 
+Crops uploaded under `_crops/<parent>/<filename>` are listed with the gallery
+photo they belong to. Pass that relative key to update one.
+
 Usage:
   python3 scripts/edit_photos.py list
   python3 scripts/edit_photos.py update-text photo.jpg --title "New title"
   python3 scripts/edit_photos.py update-text photo.jpg --description "New text"
   python3 scripts/edit_photos.py update-tags photo.jpg --add night --remove draft
+  python3 scripts/edit_photos.py update-text _crops/photo.jpg/4x5.jpg --title "4x5"
 """
 
 import argparse
@@ -56,7 +60,7 @@ def build_parser():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     subcommands = parser.add_subparsers(dest="command", required=True)
 
-    subcommands.add_parser("list", help="List gallery images with title, description, and tags")
+    subcommands.add_parser("list", help="List gallery images and crops with title, description, and tags")
 
     text = subcommands.add_parser("update-text", help="Replace the title, the description, or both")
     text.add_argument("filename", help="Image filename under the photo prefix")
@@ -171,7 +175,25 @@ def fields_from_parsed(parsed):
 
 def format_photo(name, fields):
     tags = ", ".join(fields["tags"])
-    return f"{name}\n  title: {fields['title']}\n  description: {fields['description']}\n  tags: {tags}"
+    lines = [name]
+    parent = crop_parent(name)
+    if parent:
+        lines.append(f"  crop of: {parent}")
+    lines.append(f"  title: {fields['title']}")
+    lines.append(f"  description: {fields['description']}")
+    lines.append(f"  tags: {tags}")
+    return "\n".join(lines)
+
+
+def crop_parent(relative):
+    # Same layout as photo_manifest.CROPS_DIR: _crops/<parent key>/<filename>.
+    marker = "_crops/"
+    if not relative.startswith(marker):
+        return None
+    parent, sep, name = relative[len(marker) :].rpartition("/")
+    if not sep or not parent or not name:
+        return None
+    return parent
 
 
 def image_keys(config):

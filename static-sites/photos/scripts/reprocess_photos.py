@@ -5,7 +5,8 @@ Invokes the indexer Lambda once per original under the photos prefix, with up to
 `--parallelism` calls in flight at once (default 5). Deploy
 the current photo_index function first: it writes a 300x200 JPEG under
 `_thumbs/`, a 1280px JPEG under `_lightbox/`, and records both on the photo
-index. Those derived objects are skipped here. When Printful already has a
+index. Those derived objects are skipped here. Crops under `_crops/` are
+originals and are included. When Printful already has a
 product for an object key, the indexer records its variants and does not
 create another product.
 

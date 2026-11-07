@@ -243,9 +243,16 @@ function paintLightbox(): void {
     item.append(button);
     lightboxTags.append(item);
   }
-  prevButton.disabled = lightboxIndex <= 0;
-  nextButton.disabled = lightboxIndex >= pagePhotos.length - 1;
   paintBuy(photo);
+}
+
+function stepLightbox(delta: number): void {
+  const count = pagePhotos.length;
+  if (count === 0) {
+    return;
+  }
+  lightboxIndex = (lightboxIndex + delta + count) % count;
+  paintLightbox();
 }
 
 function paintBuy(photo: Photo): void {
@@ -348,16 +355,10 @@ function onKeydown(event: KeyboardEvent): void {
   }
   if (event.key === "ArrowLeft") {
     event.preventDefault();
-    if (lightboxIndex > 0) {
-      lightboxIndex -= 1;
-      paintLightbox();
-    }
+    stepLightbox(-1);
   } else if (event.key === "ArrowRight") {
     event.preventDefault();
-    if (lightboxIndex < pagePhotos.length - 1) {
-      lightboxIndex += 1;
-      paintLightbox();
-    }
+    stepLightbox(1);
   }
 }
 
@@ -416,17 +417,11 @@ function isPrint(value: unknown): value is PrintOption {
 }
 
 prevButton.addEventListener("click", () => {
-  if (lightboxIndex > 0) {
-    lightboxIndex -= 1;
-    paintLightbox();
-  }
+  stepLightbox(-1);
 });
 
 nextButton.addEventListener("click", () => {
-  if (lightboxIndex < pagePhotos.length - 1) {
-    lightboxIndex += 1;
-    paintLightbox();
-  }
+  stepLightbox(1);
 });
 
 buyForm.addEventListener("submit", (event) => {

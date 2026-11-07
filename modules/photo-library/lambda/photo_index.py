@@ -91,6 +91,8 @@ def _derivative_prefix(folder):
 
 
 def _is_derivative(key):
+    # Files under _crops/ are originals for another photo. They are indexed
+    # like any other image so each crop gets a lightbox file and print sizes.
     return key.startswith(_derivative_prefix(THUMBNAIL_DIR)) or key.startswith(
         _derivative_prefix(LIGHTBOX_DIR)
     )

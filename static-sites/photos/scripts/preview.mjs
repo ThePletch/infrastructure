@@ -64,8 +64,10 @@ function loadPhotos() {
       throw new Error(`Missing sample photo: ${src}`);
     }
     copy(src, join(photosDir, entry.file));
+    const image = `/photos/${entry.file}`;
     photos.push({
-      url: `/photos/${entry.file}`,
+      thumbnail: image,
+      lightbox: image,
       name: entry.file,
       title: entry.title,
       description: entry.description ?? "",
