@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import timezone
 from urllib.parse import quote
 
@@ -55,28 +56,42 @@ def _der_sequence(data):
 
 
 def _parse_rsa_private_key(der):
-    """Return (n, d) from a PKCS #8 or PKCS #1 RSA private key."""
+    """Return RSA private-key components from a PKCS #8 or PKCS #1 key.
+
+    Keys generated for this stack include the Chinese Remainder Theorem
+    components. Signing with those is a pair of half-size exponentiations
+    instead of one full-size one.
+    """
     _, body, _ = _der_read(der, 0)
     fields = _der_sequence(body)
     if fields[1][0] == 0x30:
         # PKCS #8: version, AlgorithmIdentifier, OCTET STRING(RSAPrivateKey)
         _, body, _ = _der_read(fields[2][1], 0)
         fields = _der_sequence(body)
-    # RSAPrivateKey: version, n, e, d, ...
-    n = int.from_bytes(fields[1][1], "big")
-    d = int.from_bytes(fields[3][1], "big")
-    return n, d
+    # RSAPrivateKey: version, n, e, d, p, q, dP, dQ, qInv, ...
+    ints = [int.from_bytes(value, "big") for tag, value in fields if tag == 0x02]
+    n, d = ints[1], ints[3]
+    if len(ints) >= 9:
+        return (n, d, ints[4], ints[5], ints[6], ints[7], ints[8])
+    return (n, d)
 
 
 signing_key = _load_signing_key()
 
 
 def _rsa_sha256_sign(message):
-    n, d = signing_key
+    n = signing_key[0]
     size = (n.bit_length() + 7) // 8
     digest = SHA256_DIGEST_INFO + hashlib.sha256(message).digest()
     encoded = b"\x00\x01" + b"\xff" * (size - len(digest) - 3) + b"\x00" + digest
-    signature = pow(int.from_bytes(encoded, "big"), d, n)
+    m = int.from_bytes(encoded, "big")
+    if len(signing_key) == 7:
+        _, _, p, q, dp, dq, qinv = signing_key
+        m1 = pow(m, dp, p)
+        m2 = pow(m, dq, q)
+        signature = m2 + q * ((qinv * (m1 - m2)) % p)
+    else:
+        signature = pow(m, signing_key[1], n)
     return signature.to_bytes(size, "big")
 
 
@@ -84,32 +99,46 @@ def _cloudfront_b64(data):
     return base64.b64encode(data).decode().translate(str.maketrans("+=/", "-_~"))
 
 
-def _sign_url(url, expires):
+def _signed_query(resource, expires):
     policy = json.dumps(
         {
             "Statement": [
                 {
-                    "Resource": url,
+                    "Resource": resource,
                     "Condition": {"DateLessThan": {"AWS:EpochTime": expires}},
                 }
             ]
         },
         separators=(",", ":"),
-    )
-    signature = _cloudfront_b64(_rsa_sha256_sign(policy.encode()))
+    ).encode()
     return (
-        f"{url}?Expires={expires}&Signature={signature}"
+        f"Policy={_cloudfront_b64(policy)}"
+        f"&Signature={_cloudfront_b64(_rsa_sha256_sign(policy))}"
         f"&Key-Pair-Id={signing_key_id}&Hash-Algorithm=SHA256"
     )
 
 
 def lambda_handler(event, context):
     expires = int(time.time()) + url_ttl
-    photos = _list_photos()
-    index = _load_index()
+    # The bucket listing and the index read do not depend on each other.
+    # Signing does not go faster in a thread pool: each signature is one
+    # modular exponentiation, and CPython holds the GIL across it. A custom
+    # policy per derivative prefix covers every object CloudFront already
+    # serves from that prefix, so this signs twice per response.
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        listed = pool.submit(_list_photos)
+        indexed = pool.submit(_load_index)
+        photos = listed.result()
+        index = indexed.result()
+    queries = {
+        folder: _signed_query(
+            f"{site_origin}/{quote(prefix + folder, safe='/')}*", expires
+        )
+        for folder in ("_thumbs/", "_lightbox/")
+    }
     published = []
     for item in photos:
-        photo = _decorate(item, index, expires)
+        photo = _decorate(item, index, queries)
         if photo:
             published.append(photo)
     body = {"photos": published}
@@ -172,7 +201,7 @@ def _load_index():
     return payload
 
 
-def _decorate(photo, index, expires):
+def _decorate(photo, index, queries):
     key = photo["key"]
     relative = key[len(prefix) :]
     entry = index.get(key) or {}
@@ -184,8 +213,8 @@ def _decorate(photo, index, expires):
     prints = entry.get("prints") or []
     if not isinstance(prints, list):
         prints = []
-    thumbnail = _derivative_url(entry.get("thumbnail"), "_thumbs/", expires)
-    lightbox = _derivative_url(entry.get("lightbox"), "_lightbox/", expires)
+    thumbnail = _derivative_url(entry.get("thumbnail"), "_thumbs/", queries)
+    lightbox = _derivative_url(entry.get("lightbox"), "_lightbox/", queries)
     if not thumbnail or not lightbox:
         return None
     return {
@@ -200,10 +229,10 @@ def _decorate(photo, index, expires):
     }
 
 
-def _derivative_url(key, folder, expires):
+def _derivative_url(key, folder, queries):
     if not isinstance(key, str) or not key.startswith(f"{prefix}{folder}"):
         return None
-    return _sign_url(f"{site_origin}/{quote(key, safe='/')}", expires)
+    return f"{site_origin}/{quote(key, safe='/')}?{queries[folder]}"
 
 
 def _is_print(item):
