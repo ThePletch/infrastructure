@@ -8,10 +8,9 @@ module "website" {
   github_oidc_provider_arn  = var.github_oidc_provider_arn
   github_actions_repository = var.github_actions_repository
 
-  signed_paths = {
-    prefixes             = ["${local.photo_prefix}_thumbs/", "${local.photo_prefix}_lightbox/"]
-    private_prefixes     = [local.photo_prefix]
-    trusted_key_group_id = aws_cloudfront_key_group.signing.id
+  private_paths = {
+    prefixes         = ["${local.photo_prefix}_thumbs/", "${local.photo_prefix}_lightbox/"]
+    private_prefixes = [local.photo_prefix]
   }
 
   function_url_origins = [

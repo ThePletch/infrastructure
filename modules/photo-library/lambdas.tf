@@ -13,11 +13,6 @@ data "aws_iam_policy_document" "photo_manifest" {
     actions   = ["s3:GetObject"]
     resources = ["${module.website.bucket_arn}/${local.photo_index_key}"]
   }
-
-  statement {
-    actions   = ["ssm:GetParameter"]
-    resources = [aws_ssm_parameter.signing_private_key.arn]
-  }
 }
 
 module "photo_manifest" {
@@ -37,10 +32,7 @@ module "photo_manifest" {
     PHOTO_PREFIX      = local.photo_prefix
     INDEX_KEY         = local.photo_index_key
     CACHE_TTL_SECONDS = tostring(local.manifest_cache_ttl)
-    URL_TTL_SECONDS   = tostring(local.manifest_cache_ttl * 2)
     SITE_ORIGIN       = local.site_origin
-    SIGNING_KEY_ID    = aws_cloudfront_public_key.signing.id
-    SIGNING_KEY_PARAM = aws_ssm_parameter.signing_private_key.name
   }
 }
 

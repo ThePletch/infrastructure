@@ -87,7 +87,7 @@ data "aws_iam_policy_document" "open" {
   dynamic "statement" {
     for_each = length(var.private_prefixes) > 0 ? [1] : []
     content {
-      sid           = "Limit CloudFront to signed prefixes"
+      sid           = "Limit CloudFront to readable prefixes"
       effect        = "Deny"
       actions       = ["s3:GetObject"]
       not_resources = [for p in var.cloudfront_readable_prefixes : "${aws_s3_bucket.main.arn}/${p}*"]
