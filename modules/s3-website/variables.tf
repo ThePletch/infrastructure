@@ -22,12 +22,11 @@ variable "redirects" {
   default = {}
 }
 
-variable "signed_paths" {
-  description = "Key prefixes served only through CloudFront signed URLs (prefixes), and broader prefixes denied to public S3 access (private_prefixes, which must cover prefixes)."
+variable "private_paths" {
+  description = "Key prefixes denied to public S3 access (private_prefixes). prefixes is the subset served unsigned through CloudFront Origin Access Control; CloudFront is denied every other key under private_prefixes."
   type = object({
-    prefixes             = list(string)
-    private_prefixes     = list(string)
-    trusted_key_group_id = string
+    prefixes         = list(string)
+    private_prefixes = list(string)
   })
   default = null
 }

@@ -34,12 +34,6 @@ variable "photo_prefix" {
   description = "S3 key prefix for the photo library. The manifest is served at /api/photos."
 }
 
-variable "signing_key_version" {
-  type        = number
-  default     = 1
-  description = "Change to rotate the CloudFront URL signing key."
-}
-
 variable "printful_api_key" {
   type        = string
   default     = ""
