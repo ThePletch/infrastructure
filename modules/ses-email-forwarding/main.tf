@@ -1,5 +1,5 @@
 locals {
-  namified_domain      = replace(var.incoming_domain, "/\\./", "-")
+  namified_domain = replace(var.incoming_domain, "/\\./", "-")
 }
 
 data "aws_caller_identity" "current" {}
