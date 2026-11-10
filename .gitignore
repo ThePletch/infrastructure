@@ -22,6 +22,7 @@ __pycache__
 .pytest_cache
 .venv
 
-static-sites/*/node_modules
 static-sites/*/dist
+static-sites/*/node_modules
+static-sites/*/mockups
 static-sites/photos/sample-photos/*.jpg

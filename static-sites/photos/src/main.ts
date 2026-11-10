@@ -2,18 +2,27 @@ const PAGE_SIZE = 24;
 const API_PATH = "/api/photos";
 const CHECKOUT_PATH = "/api/checkout";
 
+type Product = "poster" | "framed";
+
 type PrintOption = {
   id: number | string;
-  label: string;
+  product: Product;
+  width: number;
+  height: number;
   price: string;
 };
 
-type Crop = {
+type Version = {
   name: string;
   label: string;
   lightbox: string;
   prints: PrintOption[];
 };
+
+const PRODUCTS: { id: Product; toggle: string; summary: string }[] = [
+  { id: "poster", toggle: "Unframed", summary: "Unframed matte poster" },
+  { id: "framed", toggle: "Framed", summary: "Framed matte print" },
+];
 
 type Photo = {
   thumbnail: string;
@@ -23,7 +32,7 @@ type Photo = {
   description: string;
   tags: string[];
   prints: PrintOption[];
-  crops: Crop[];
+  versions: Version[];
   lastModified: string;
 };
 
@@ -37,22 +46,32 @@ const gridEl = mustQuery<HTMLElement>("#grid");
 const tagsEl = mustQuery<HTMLElement>("#tags");
 const paginationEl = mustQuery<HTMLElement>("#pagination");
 const lightbox = mustQuery<HTMLDialogElement>("#lightbox");
-const lightboxImage = mustQuery<HTMLImageElement>("#lightbox img");
+const lightboxImage = mustQuery<HTMLImageElement>("#lightbox .stage img");
+const lightboxCounter = mustQuery<HTMLElement>("#lightbox .counter");
 const lightboxTitle = mustQuery<HTMLElement>("#lightbox h2");
 const lightboxDescription = mustQuery<HTMLElement>("#lightbox .description");
 const lightboxTags = mustQuery<HTMLElement>("#lightbox .lightbox-tags");
 const prevButton = mustQuery<HTMLButtonElement>("#lightbox .prev");
 const nextButton = mustQuery<HTMLButtonElement>("#lightbox .next");
-const cropsEl = mustQuery<HTMLElement>("#crops");
-const cropOptions = mustQuery<HTMLElement>("#crops .crop-options");
+const versionsEl = mustQuery<HTMLElement>("#versions");
+const versionsCount = mustQuery<HTMLElement>("#versions .versions-count");
+const versionOptions = mustQuery<HTMLElement>("#versions .version-options");
 const buyForm = mustQuery<HTMLFormElement>("#buy");
-const printSelect = mustQuery<HTMLSelectElement>("#print-variant");
+const productOptions = mustQuery<HTMLElement>("#buy .product-options");
+const sizeNote = mustQuery<HTMLElement>("#buy .size-note");
+const sizeOptions = mustQuery<HTMLElement>("#buy .size-options");
+const buyPrice = mustQuery<HTMLElement>("#buy .buy-price");
+const buySummary = mustQuery<HTMLElement>("#buy .buy-summary");
 const buyStatus = mustQuery<HTMLElement>(".buy-status");
 
 let photos: Photo[] = [];
 let pagePhotos: Photo[] = [];
 let lightboxIndex = 0;
-let cropIndex = -1;
+let versionIndex = -1;
+// Product and size carry across versions and photos when they are offered.
+let selectedProduct: Product = "poster";
+let selectedSize: string | null = null;
+let selectedPrint: PrintOption | null = null;
 
 function mustQuery<T extends Element>(selector: string): T {
   const el = document.querySelector(selector);
@@ -223,11 +242,18 @@ function applyState(state: GalleryState, push: boolean): void {
 
 function openLightbox(index: number): void {
   lightboxIndex = index;
-  cropIndex = -1;
+  versionIndex = -1;
   paintLightbox();
   if (!lightbox.open) {
     lightbox.showModal();
   }
+}
+
+function versionsOf(photo: Photo): Version[] {
+  return [
+    { name: photo.name, label: "Original", lightbox: photo.lightbox, prints: photo.prints },
+    ...photo.versions,
+  ];
 }
 
 function paintLightbox(): void {
@@ -236,12 +262,15 @@ function paintLightbox(): void {
     lightbox.close();
     return;
   }
-  if (cropIndex >= photo.crops.length) {
-    cropIndex = -1;
+  if (versionIndex >= photo.versions.length) {
+    versionIndex = -1;
   }
-  const crop = cropIndex >= 0 ? photo.crops[cropIndex] : null;
-  lightboxImage.src = crop ? crop.lightbox : photo.lightbox;
-  lightboxImage.alt = crop ? `${photo.title}, ${crop.label}` : photo.title;
+  const version = versionsOf(photo)[versionIndex + 1];
+  lightboxImage.src = version.lightbox;
+  lightboxImage.alt = versionIndex >= 0 ? `${photo.title}, ${version.label}` : photo.title;
+  lightboxCounter.textContent = `${lightboxIndex + 1} / ${pagePhotos.length}`;
+  prevButton.hidden = pagePhotos.length < 2;
+  nextButton.hidden = pagePhotos.length < 2;
   lightboxTitle.textContent = photo.title;
   lightboxDescription.textContent = photo.description;
   lightboxDescription.hidden = photo.description.length === 0;
@@ -259,32 +288,56 @@ function paintLightbox(): void {
     item.append(button);
     lightboxTags.append(item);
   }
-  paintCrops(photo);
-  paintBuy(crop ? crop.prints : photo.prints);
+  paintVersions(photo);
+  paintBuy(version);
 }
 
-function paintCrops(photo: Photo): void {
-  cropOptions.replaceChildren();
-  if (photo.crops.length === 0) {
-    cropsEl.hidden = true;
+function radio(group: string, checked: boolean, onSelect: () => void): HTMLInputElement {
+  const input = document.createElement("input");
+  input.type = "radio";
+  input.name = group;
+  input.checked = checked;
+  input.addEventListener("change", onSelect);
+  return input;
+}
+
+function printCount(prints: PrintOption[]): string {
+  if (prints.length === 0) {
+    return "not for sale";
+  }
+  return prints.length === 1 ? "1 print" : `${prints.length} prints`;
+}
+
+function paintVersions(photo: Photo): void {
+  versionOptions.replaceChildren();
+  if (photo.versions.length === 0) {
+    versionsEl.hidden = true;
     return;
   }
-  cropsEl.hidden = false;
-  const choices = ["Original", ...photo.crops.map((crop) => crop.label)];
-  for (const [index, label] of choices.entries()) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "text-button";
-    button.textContent = label;
-    const selected = index === 0 ? cropIndex < 0 : cropIndex === index - 1;
-    if (selected) {
-      button.setAttribute("aria-current", "true");
-    }
-    button.addEventListener("click", () => {
-      cropIndex = index === 0 ? -1 : index - 1;
-      paintLightbox();
-    });
-    cropOptions.append(button);
+  versionsEl.hidden = false;
+  const versions = versionsOf(photo);
+  versionsCount.textContent = `${versions.length} available`;
+  for (const [index, version] of versions.entries()) {
+    const option = document.createElement("label");
+    option.className = "version";
+    const thumb = document.createElement("img");
+    thumb.src = index === 0 ? photo.thumbnail : version.lightbox;
+    thumb.alt = "";
+    thumb.loading = "lazy";
+    const name = document.createElement("span");
+    name.textContent = version.label;
+    const count = document.createElement("small");
+    count.textContent = printCount(version.prints);
+    option.append(
+      radio("version", index === versionIndex + 1, () => {
+        versionIndex = index - 1;
+        paintLightbox();
+      }),
+      thumb,
+      name,
+      count,
+    );
+    versionOptions.append(option);
   }
 }
 
@@ -294,25 +347,94 @@ function stepLightbox(delta: number): void {
     return;
   }
   lightboxIndex = (lightboxIndex + delta + count) % count;
-  cropIndex = -1;
+  versionIndex = -1;
   paintLightbox();
 }
 
-function paintBuy(prints: PrintOption[]): void {
-  printSelect.replaceChildren();
-  buyStatus.hidden = true;
-  buyStatus.textContent = "";
+function sizeKey(option: PrintOption): string {
+  return `${option.width}x${option.height}`;
+}
+
+function formatPrice(price: string): string {
+  return price ? `$${price.replace(/\.00$/, "")}` : "";
+}
+
+function productInfo(product: Product): (typeof PRODUCTS)[number] {
+  return PRODUCTS.find((item) => item.id === product) ?? PRODUCTS[0];
+}
+
+function paintBuy(version: Version): void {
+  productOptions.replaceChildren();
+  sizeOptions.replaceChildren();
+  setBuyStatus(null);
+  const prints = version.prints;
   if (prints.length === 0) {
+    selectedPrint = null;
     buyForm.hidden = true;
     return;
   }
   buyForm.hidden = false;
-  for (const option of prints) {
-    const item = document.createElement("option");
-    item.value = String(option.id);
-    item.textContent = option.price ? `${option.label} — $${option.price}` : option.label;
-    printSelect.append(item);
+  const offered = PRODUCTS.filter((product) => prints.some((print) => print.product === product.id));
+  if (!offered.some((product) => product.id === selectedProduct)) {
+    selectedProduct = offered[0].id;
   }
+  if (offered.length === 1) {
+    const only = document.createElement("p");
+    only.className = "product-only";
+    only.textContent = `${offered[0].toggle} only`;
+    productOptions.append(only);
+  } else {
+    for (const product of offered) {
+      const option = document.createElement("label");
+      option.className = "product";
+      const name = document.createElement("span");
+      name.textContent = product.toggle;
+      const from = document.createElement("small");
+      const cheapest = prints.find((print) => print.product === product.id);
+      from.textContent = cheapest?.price ? `from ${formatPrice(cheapest.price)}` : "";
+      option.append(
+        radio("product", product.id === selectedProduct, () => {
+          selectedProduct = product.id;
+          paintBuy(version);
+        }),
+        name,
+        from,
+      );
+      productOptions.append(option);
+    }
+  }
+
+  const sizes = prints.filter((print) => print.product === selectedProduct);
+  const chosen = sizes.find((print) => sizeKey(print) === selectedSize) ?? sizes[0];
+  selectedSize = sizeKey(chosen);
+  selectedPrint = chosen;
+  sizeNote.textContent = `inches · ${productInfo(selectedProduct).summary.toLowerCase()}`;
+  for (const print of sizes) {
+    const option = document.createElement("label");
+    option.className = "size";
+    const dims = document.createElement("span");
+    dims.textContent = `${print.width} × ${print.height}`;
+    const price = document.createElement("span");
+    price.textContent = formatPrice(print.price);
+    option.append(
+      radio("size", print === chosen, () => {
+        selectedSize = sizeKey(print);
+        paintBuy(version);
+      }),
+      dims,
+      price,
+    );
+    sizeOptions.append(option);
+  }
+  buyPrice.textContent = formatPrice(chosen.price);
+  const parts = [
+    `${productInfo(chosen.product).summary}, ${chosen.width} × ${chosen.height} in`,
+    "printed to order",
+  ];
+  if (versionIndex >= 0) {
+    parts.unshift(version.label);
+  }
+  buySummary.textContent = parts.join(" · ");
 }
 
 function setBuyStatus(message: string | null): void {
@@ -327,8 +449,8 @@ function setBuyStatus(message: string | null): void {
 
 async function startCheckout(event: SubmitEvent): Promise<void> {
   event.preventDefault();
-  const photo = pagePhotos[lightboxIndex];
-  if (!photo || printSelect.value === "") {
+  const print = selectedPrint;
+  if (!print) {
     return;
   }
   const button = buyForm.querySelector("button[type='submit']");
@@ -340,7 +462,7 @@ async function startCheckout(event: SubmitEvent): Promise<void> {
     const response = await fetch(CHECKOUT_PATH, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ variant_id: Number.parseInt(printSelect.value, 10) }),
+      body: JSON.stringify({ variant_id: Number.parseInt(String(print.id), 10) }),
     });
     const payload: unknown = await response.json().catch(() => null);
     const error = errorMessage(payload);
@@ -393,7 +515,7 @@ function checkoutNotice(): void {
 }
 
 function onKeydown(event: KeyboardEvent): void {
-  if (!lightbox.open) {
+  if (!lightbox.open || event.target instanceof HTMLInputElement) {
     return;
   }
   if (event.key === "ArrowLeft") {
@@ -423,9 +545,9 @@ async function loadPhotos(): Promise<void> {
   photos = payload.photos.filter(isPhoto).map((photo) => ({
     ...photo,
     prints: printsOf(photo).filter(isPrint),
-    crops: cropsOf(photo).filter(isCrop).map((crop) => ({
-      ...crop,
-      prints: printsOf(crop).filter(isPrint),
+    versions: versionsFrom(photo).filter(isVersion).map((version) => ({
+      ...version,
+      prints: printsOf(version).filter(isPrint),
     })),
   }));
 }
@@ -451,20 +573,22 @@ function printsOf(photo: { prints?: unknown }): unknown[] {
   return Array.isArray(photo.prints) ? photo.prints : [];
 }
 
-function cropsOf(photo: Partial<Photo>): unknown[] {
-  return Array.isArray(photo.crops) ? photo.crops : [];
+// The manifest still publishes versions under the "crops" key.
+function versionsFrom(photo: object): unknown[] {
+  const crops = "crops" in photo ? photo.crops : undefined;
+  return Array.isArray(crops) ? crops : [];
 }
 
-function isCrop(value: unknown): value is Crop {
+function isVersion(value: unknown): value is Version {
   if (typeof value !== "object" || value === null) {
     return false;
   }
-  const crop = value as Partial<Crop>;
+  const version = value as Partial<Version>;
   return (
-    typeof crop.name === "string" &&
-    typeof crop.label === "string" &&
-    crop.label.length > 0 &&
-    typeof crop.lightbox === "string"
+    typeof version.name === "string" &&
+    typeof version.label === "string" &&
+    version.label.length > 0 &&
+    typeof version.lightbox === "string"
   );
 }
 
@@ -475,7 +599,9 @@ function isPrint(value: unknown): value is PrintOption {
   const option = value as Partial<PrintOption>;
   return (
     (typeof option.id === "number" || typeof option.id === "string") &&
-    typeof option.label === "string" &&
+    (option.product === "poster" || option.product === "framed") &&
+    typeof option.width === "number" &&
+    typeof option.height === "number" &&
     typeof option.price === "string"
   );
 }
