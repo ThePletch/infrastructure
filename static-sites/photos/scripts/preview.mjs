@@ -66,10 +66,10 @@ function loadPhotos() {
     copy(src, join(photosDir, entry.file));
     const image = `/photos/${entry.file}`;
     const defaultPrints = [
-      { id: 1, label: "Poster · 12×18", price: "28.00" },
-      { id: 2, label: "Poster · 24×36", price: "48.00" },
-      { id: 3, label: "Framed poster · 12×18", price: "72.00" },
-      { id: 4, label: "Framed poster · 24×36", price: "128.00" },
+      { id: 1, product: "poster", width: 12, height: 18, price: "28.00" },
+      { id: 2, product: "poster", width: 24, height: 36, price: "48.00" },
+      { id: 3, product: "framed", width: 12, height: 18, price: "72.00" },
+      { id: 4, product: "framed", width: 24, height: 36, price: "128.00" },
     ];
     photos.push({
       thumbnail: image,

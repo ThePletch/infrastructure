@@ -21,33 +21,37 @@
     <main id="grid" class="grid"></main>
     <nav id="pagination" class="pagination" hidden></nav>
     <dialog id="lightbox" class="lightbox">
-      <form method="dialog">
-        <button type="submit" class="icon-button close" aria-label="Close">Close</button>
-      </form>
-      <figure>
+      <div class="stage">
         <img alt="" />
-        <figcaption>
+        <button type="button" class="arrow prev" aria-label="Previous photo">‹</button>
+        <button type="button" class="arrow next" aria-label="Next photo">›</button>
+        <span class="counter"></span>
+      </div>
+      <aside class="panel">
+        <form method="dialog">
+          <button type="submit" class="icon-button close" aria-label="Close">Close <kbd>esc</kbd></button>
+        </form>
+        <div>
           <h2></h2>
           <p class="description"></p>
           <ul class="lightbox-tags"></ul>
-        </figcaption>
-      </figure>
-      <div class="crops" id="crops" hidden>
-        <span>Crop</span>
-        <div class="crop-options" role="group" aria-label="Crop"></div>
-      </div>
-      <form class="buy" id="buy" hidden>
-        <label>
-          <span>Print</span>
-          <select id="print-variant"></select>
-        </label>
-        <button type="submit" class="text-button">Buy print</button>
-        <p class="buy-status" hidden></p>
-      </form>
-      <div class="lightbox-nav">
-        <button type="button" class="text-button prev">Previous</button>
-        <button type="button" class="text-button next">Next</button>
-      </div>
+        </div>
+        <section class="versions" id="versions" hidden>
+          <p class="panel-label"><span>Version</span><em class="versions-count"></em></p>
+          <div class="version-options" role="radiogroup" aria-label="Version"></div>
+        </section>
+        <form class="buy" id="buy" hidden>
+          <p class="panel-label"><span>Print</span></p>
+          <div class="product-options" role="radiogroup" aria-label="Print type"></div>
+          <p class="panel-label"><span>Size</span><em class="size-note"></em></p>
+          <div class="size-options" role="radiogroup" aria-label="Size"></div>
+          <div class="buy-footer">
+            <button type="submit" class="buy-button"><span>Buy print</span><span class="buy-price"></span></button>
+            <p class="buy-summary"></p>
+            <p class="buy-status" hidden></p>
+          </div>
+        </form>
+      </aside>
     </dialog>
     <noscript>
       <p class="status">JavaScript is required to load the gallery.</p>

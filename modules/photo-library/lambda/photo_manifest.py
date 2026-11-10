@@ -177,20 +177,23 @@ def _prints(entry):
     if not isinstance(prints, list):
         prints = []
     decorated = [_decorate_print(item) for item in prints if _is_print(item)]
+    decorated = [item for item in decorated if item]
     decorated.sort(key=_print_sort_key)
     return decorated
 
 
 def _print_sort_key(item):
-    label = item.get("label") or ""
-    framed = 1 if "framed" in label.lower() else 0
-    match = re.search(r"(\d+(?:\.\d+)?)\s*[x×✕]\s*(\d+(?:\.\d+)?)", label, re.IGNORECASE)
-    if not match:
-        return (framed, 0, 0, 0)
-    width = float(match.group(1))
-    height = float(match.group(2))
-    short, long = sorted((width, height))
+    framed = 1 if item["product"] == "framed" else 0
+    short, long = sorted((item["width"], item["height"]))
     return (framed, short * long, short, long)
+
+
+_SIZE_PAIR = re.compile(r"(\d+(?:\.\d+)?)\s*[x×✕]\s*(\d+(?:\.\d+)?)", re.IGNORECASE)
+
+
+def _size_number(part):
+    number = float(part)
+    return int(number) if number.is_integer() else number
 
 
 def _derivative_url(key, folder):
@@ -204,8 +207,16 @@ def _is_print(item):
 
 
 def _decorate_print(item):
+    # Index labels are "Poster · 12x18" or "Framed poster · 12x18". The
+    # gallery cannot offer a print without its size.
+    label = str(item.get("label"))
+    match = _SIZE_PAIR.search(label)
+    if not match:
+        return None
     return {
         "id": item.get("id"),
-        "label": str(item.get("label")),
+        "product": "framed" if "framed" in label.lower() else "poster",
+        "width": _size_number(match.group(1)),
+        "height": _size_number(match.group(2)),
         "price": str(item.get("price") or ""),
     }

@@ -59,6 +59,8 @@ def _published_index():
                 {"id": 3, "label": "Framed poster · 12x18", "price": "70.00"},
                 {"id": 9, "label": "Poster · 12x18", "price": "24.00"},
                 {"id": 1, "label": "Poster · 8x12", "price": "20.00"},
+                {"id": 4, "label": "Poster · 11.5×17", "price": "22.00"},
+                {"id": 5, "label": "Poster", "price": "10.00"},
                 {"label": "missing id"},
             ],
         }
@@ -101,9 +103,10 @@ def test_happy_path_publishes_indexed_photo(manifest):
                 "description": "Night sky",
                 "tags": ["sky", "7"],
                 "prints": [
-                    {"id": 1, "label": "Poster · 8x12", "price": "20.00"},
-                    {"id": 9, "label": "Poster · 12x18", "price": "24.00"},
-                    {"id": 3, "label": "Framed poster · 12x18", "price": "70.00"},
+                    {"id": 1, "product": "poster", "width": 8, "height": 12, "price": "20.00"},
+                    {"id": 4, "product": "poster", "width": 11.5, "height": 17, "price": "22.00"},
+                    {"id": 9, "product": "poster", "width": 12, "height": 18, "price": "24.00"},
+                    {"id": 3, "product": "framed", "width": 12, "height": 18, "price": "70.00"},
                 ],
                 "crops": [],
                 "lastModified": modified,
