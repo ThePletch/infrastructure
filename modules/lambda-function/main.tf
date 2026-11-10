@@ -1,8 +1,6 @@
 locals {
   deployment_package_path = "${path.module}/files/${var.name}.zip"
   source_filename_no_ext  = split(".", basename(var.source_code_file))[0]
-  runtime_layer_string    = replace(var.function_runtime, ".", "")
-  architecture            = "x86_64"
 }
 
 data "archive_file" "deployment_package" {

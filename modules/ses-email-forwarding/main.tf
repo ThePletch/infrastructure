@@ -1,5 +1,4 @@
 locals {
-  maildump_bucket_name = "${var.incoming_domain}-maildump"
   namified_domain      = replace(var.incoming_domain, "/\\./", "-")
 }
 

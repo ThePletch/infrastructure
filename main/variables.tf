@@ -1,8 +1,3 @@
-variable "base_domain" {
-  description = "Root domain name for primary resources to be hosted under"
-  type        = string
-}
-
 variable "aws_region" {
   type = string
 }
