@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timezone
 from urllib.parse import quote
@@ -175,7 +176,21 @@ def _prints(entry):
     prints = entry.get("prints") or []
     if not isinstance(prints, list):
         prints = []
-    return [_decorate_print(item) for item in prints if _is_print(item)]
+    decorated = [_decorate_print(item) for item in prints if _is_print(item)]
+    decorated.sort(key=_print_sort_key)
+    return decorated
+
+
+def _print_sort_key(item):
+    label = item.get("label") or ""
+    framed = 1 if "framed" in label.lower() else 0
+    match = re.search(r"(\d+(?:\.\d+)?)\s*[x×✕]\s*(\d+(?:\.\d+)?)", label, re.IGNORECASE)
+    if not match:
+        return (framed, 0, 0, 0)
+    width = float(match.group(1))
+    height = float(match.group(2))
+    short, long = sorted((width, height))
+    return (framed, short * long, short, long)
 
 
 def _derivative_url(key, folder):

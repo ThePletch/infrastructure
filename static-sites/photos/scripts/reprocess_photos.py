@@ -8,7 +8,11 @@ the current photo_index function first: it writes a 300x200 JPEG under
 index. Those derived objects are skipped here. Crops under `_crops/` are
 originals and are included. When Printful already has a
 product for an object key, the indexer records its variants and does not
-create another product.
+create another product. `--overwrite-prices` tells the indexer to replace
+those variants' retail prices with the price list, add variants for matching
+sizes that are missing, and remove variants whose size no longer matches.
+Each photo is one Printful update. Printful allows about ten of those a
+minute, and the indexer waits and retries instead of skipping a size.
 
 Bucket, prefix, indexer name, index key, and region come from `terraform output`
 in main/. See gallery_config.py for the optional PHOTO_* overrides.
@@ -16,6 +20,7 @@ in main/. See gallery_config.py for the optional PHOTO_* overrides.
 Usage:
   python3 scripts/reprocess_photos.py
   python3 scripts/reprocess_photos.py --parallelism 10
+  python3 scripts/reprocess_photos.py --overwrite-prices
 """
 
 import argparse
@@ -46,6 +51,11 @@ def main(argv=None):
         default=5,
         help="Concurrent Lambda invocations (default: 5)",
     )
+    parser.add_argument(
+        "--overwrite-prices",
+        action="store_true",
+        help="Reprice existing Printful products and sync their variants to the current size list",
+    )
     args = parser.parse_args(argv)
     if args.parallelism < 1:
         parser.error("--parallelism must be at least 1")
@@ -64,7 +74,7 @@ def main(argv=None):
         return 1
     workers = min(args.parallelism, len(keys))
     print(f"Reprocessing {len(keys)} image(s) with {FUNCTION} ({workers} at a time)")
-    failed = reprocess(keys, workers)
+    failed = reprocess(keys, workers, overwrite_prices=args.overwrite_prices)
     if failed:
         print(f"{len(failed)} of {len(keys)} failed", file=sys.stderr)
         return 1
@@ -72,11 +82,14 @@ def main(argv=None):
     return 0
 
 
-def reprocess(keys, workers):
+def reprocess(keys, workers, overwrite_prices=False):
     failed = []
     total = len(keys)
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = {pool.submit(invoke, key): (index, key) for index, key in enumerate(keys, start=1)}
+        futures = {
+            pool.submit(invoke, key, overwrite_prices): (index, key)
+            for index, key in enumerate(keys, start=1)
+        }
         for future in as_completed(futures):
             index, key = futures[future]
             error = future.result()
@@ -130,7 +143,7 @@ def is_image(key):
     return ext in IMAGE_EXTS
 
 
-def invoke(key):
+def invoke(key, overwrite_prices=False):
     # S3 delivers the object key URL-encoded. The indexer decodes it.
     event = {
         "Records": [
@@ -140,6 +153,8 @@ def invoke(key):
             }
         ]
     }
+    if overwrite_prices:
+        event["overwrite_prices"] = True
     with tempfile.NamedTemporaryFile("w+", encoding="utf-8") as payload, tempfile.NamedTemporaryFile(
         "w+", encoding="utf-8"
     ) as response:

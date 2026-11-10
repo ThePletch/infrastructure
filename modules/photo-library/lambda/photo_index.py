@@ -1,5 +1,4 @@
 import json
-import math
 import os
 import re
 import struct
@@ -53,12 +52,15 @@ def _index_key():
 
 
 def lambda_handler(event, context):
+    # The reprocess script sets this. An S3 notification leaves it off, so an
+    # upload keeps the variants already stored on a Printful product.
+    overwrite_prices = bool(event.get("overwrite_prices"))
     for record in event.get("Records", []):
-        _handle_record(record)
+        _handle_record(record, overwrite_prices=overwrite_prices)
     return {"statusCode": 200}
 
 
-def _handle_record(record):
+def _handle_record(record, overwrite_prices=False):
     key = unquote_plus(record["s3"]["object"]["key"])
     prefix = _env("PHOTO_PREFIX")
     if not key.startswith(prefix):
@@ -74,7 +76,7 @@ def _handle_record(record):
     if not _is_image(key):
         _update_index(remove_key=key)
         return
-    metadata = _read_metadata(key)
+    metadata = _read_metadata(key, overwrite_prices=overwrite_prices)
     thumbnail, lightbox = _write_derivatives(key)
     metadata["thumbnail"] = thumbnail
     metadata["lightbox"] = lightbox
@@ -178,6 +180,24 @@ def _cover_crop(image, width, height):
     return image.crop((left, top, left + crop_w, top + crop_h))
 
 
+def _image_size(key):
+    try:
+        response = _s3().get_object(Bucket=_bucket(), Key=key)
+        data = response["Body"].read()
+    except Exception:
+        return None
+    import io
+
+    from PIL import Image
+
+    Image.MAX_IMAGE_PIXELS = 250_000_000
+    try:
+        with Image.open(io.BytesIO(data)) as image:
+            return image.size
+    except Exception:
+        return None
+
+
 def _jpeg_bytes(image):
     import io
 
@@ -201,7 +221,7 @@ def _flatten_rgb(image):
     return image.convert("RGB")
 
 
-def _read_metadata(key):
+def _read_metadata(key, overwrite_prices=False):
     empty = {"title": "", "description": "", "tags": []}
     try:
         header, total = _get_object_range(key, HEADER_RANGE)
@@ -223,7 +243,13 @@ def _read_metadata(key):
         "width": parsed.get("width") or 0,
         "height": parsed.get("height") or 0,
     }
-    prints = _sync_printful(key, meta)
+    # A large APP segment can push the real frame past the header we parsed.
+    # The pixel size is what decides which print sizes are sharp enough.
+    if not meta["width"] or not meta["height"]:
+        size = _image_size(key)
+        if size:
+            meta["width"], meta["height"] = size
+    prints = _sync_printful(key, meta, overwrite_prices=overwrite_prices)
     if prints:
         meta["prints"] = prints
     return meta
@@ -690,17 +716,47 @@ MIN_DPI = 150
 # Short/long side. 5% still leaves each print ratio closer to itself than to
 # the next one, and keeps a near-square such as 2946×2866 on the square sizes.
 RATIO_TOLERANCE = 0.05
-RETAIL_MARKUP = 2.0
 SIZE_SETS = (
-    (1.0, ((10, 10), (12, 12), (16, 16))),
+    (1.0, ((10, 10), (12, 12), (16, 16), (18, 18), (24, 24))),
     (4 / 5, ((8, 10), (16, 20))),
-    (3 / 4, ((12, 16), (18, 24))),
-    (2 / 3, ((12, 18), (24, 36))),
-    # 8×20 is the only 2:5 poster Printful sells. A 5566×2226 crop is this
-    # ratio to within a pixel. Framed posters have no 8×20 variant, so only
-    # the unframed poster is listed.
-    (2 / 5, ((8, 20),)),
+    (3 / 4, ((12, 16), (18, 24), (24, 32))),
+    (2 / 3, ((8, 12), (12, 18), (20, 30), (24, 36))),
+    (2 / 5, ((8, 20), (10, 24))),
 )
+
+PRICING = {
+    "unframed": {
+        (8, 10): 20.0,
+        (8, 12): 20.0,
+        (8, 20): 25.0,
+        (10, 10): 20.0,
+        (10, 24): 30.0,
+        (12, 12): 25.0,
+        (12, 16): 25.0,
+        (12, 18): 25.0,
+        (16, 16): 25.0,
+        (16, 20): 30.0,
+        (18, 18): 25.0,
+        (18, 24): 30.0,
+        (20, 30): 30.0,
+        (24, 24): 30.0,
+        (24, 32): 35.0,
+        (24, 36): 40.0,
+    },
+    "framed": {
+        (8, 10): 45.0,
+        (10, 10): 50.0,
+        (12, 12): 60.0,
+        (12, 16): 65.0,
+        (12, 18): 70.0,
+        (16, 16): 80.0,
+        (16, 20): 90.0,
+        (18, 18): 90.0,
+        (18, 24): 95.0,
+        (20, 30): 115.0,
+        (24, 36): 155.0,
+    }
+}
 
 _printful_store_id = None
 _printful_catalog = {}
@@ -716,13 +772,17 @@ def _public_file_url(key):
     return f"{origin}/{quote(key)}"
 
 
-def _sync_printful(key, meta):
+def _sync_printful(key, meta, overwrite_prices=False):
     if not _printful_token():
         return []
-    # A product already stored under this object key is reused. Updating it
-    # would drop any variant whose sync id was omitted and create another.
+    # A product already stored under this object key is reused. overwrite_prices
+    # sends one product update: kept variants include their sync id, new sizes
+    # omit it, and sizes that no longer match are left out so Printful drops
+    # them. One write is what the sync-product rate limit will accept.
     existing = _existing_printful_product(key)
     if existing:
+        if overwrite_prices:
+            _sync_existing_printful(key, meta, existing)
         return _print_offerings(existing)
     width = meta.get("width") or 0
     height = meta.get("height") or 0
@@ -750,6 +810,8 @@ def _sync_printful(key, meta):
         # means it is already there; read it back instead of leaving prints blank.
         existing = _existing_printful_product(key, refresh=True)
         if existing:
+            if overwrite_prices:
+                _sync_existing_printful(key, meta, existing)
             return _print_offerings(existing)
         return []
     # Create returns only the product summary (id, name, variant count).
@@ -834,6 +896,8 @@ def _eligible_sizes(width, height):
 
 
 def _build_sync_variants(key, sizes):
+    if not sizes:
+        return []
     file_url = _public_file_url(key)
     variants = []
     for product_id, kind, frame in (
@@ -842,6 +906,9 @@ def _build_sync_variants(key, sizes):
     ):
         catalog = _catalog_variants(product_id)
         for width_in, height_in in sizes:
+            price = _listed_price(kind, width_in, height_in)
+            if price is None:
+                continue
             catalog_id = _match_catalog_variant(catalog, width_in, height_in, frame)
             if catalog_id is None:
                 continue
@@ -849,7 +916,7 @@ def _build_sync_variants(key, sizes):
                 {
                     "external_id": f"{key}:{kind}:{width_in}x{height_in}",
                     "variant_id": catalog_id,
-                    "retail_price": _retail_price(catalog, catalog_id),
+                    "retail_price": price,
                     "files": [{"type": "default", "url": file_url}],
                     "options": [{"id": "fill_mode", "value": "fit"}],
                 }
@@ -857,14 +924,217 @@ def _build_sync_variants(key, sizes):
     return variants
 
 
+def _sync_existing_printful(key, meta, product):
+    width = meta.get("width") or 0
+    height = meta.get("height") or 0
+    if not width or not height:
+        _overwrite_printful_prices(product)
+        return
+    sizes = _eligible_sizes(width, height)
+    payload = _variant_sync_payload(key, product, sizes)
+    if payload is None:
+        return
+    product_id = _printful_sync_product_id(product)
+    if product_id is None:
+        print(f"printful skip variant sync for {key}: missing product id")
+        return
+    saved = _printful_request(
+        "PUT",
+        f"/store/products/{product_id}",
+        {"sync_variants": payload},
+    )
+    if not isinstance(saved, dict):
+        print(f"printful variant sync failed for {key}")
+        return
+    detail = saved if "sync_variants" in saved else None
+    if detail is None:
+        detail = _printful_request("GET", f"/store/products/{product_id}")
+    if not isinstance(detail, dict) or "sync_variants" not in detail:
+        print(f"printful variant sync for {key} did not return variants")
+        return
+    product["sync_variants"] = detail.get("sync_variants") or []
+
+
+def _variant_sync_payload(key, product, sizes):
+    matching_sizes = {tuple(sorted(size)) for size in sizes}
+    present = set()
+    payloads = []
+    changed = False
+    for variant in product.get("sync_variants") or []:
+        if _variant_size(variant) not in matching_sizes:
+            changed = True
+            continue
+        identity = _variant_identity(variant)
+        if identity:
+            present.add(identity)
+        price = _price_for_sync_variant(variant)
+        current = _money(variant.get("retail_price"))
+        if price and current != price:
+            changed = True
+        payloads.append(_kept_variant_payload(variant, price or current))
+    for created in _build_sync_variants(key, sizes):
+        identity = _variant_identity(created)
+        if identity is None or identity in present:
+            continue
+        changed = True
+        payloads.append(created)
+        present.add(identity)
+    if not changed:
+        return None
+    payloads.sort(key=_variant_sort_key)
+    return payloads
+
+
+def _kept_variant_payload(variant, price):
+    payload = {"id": variant.get("id")}
+    if variant.get("external_id"):
+        payload["external_id"] = variant["external_id"]
+    variant_id = (variant.get("product") or {}).get("variant_id") or variant.get("variant_id")
+    if variant_id is not None:
+        payload["variant_id"] = variant_id
+    if price:
+        payload["retail_price"] = price
+    files = _sync_files(variant.get("files"))
+    if files:
+        payload["files"] = files
+    options = _sync_options(variant.get("options"))
+    if options:
+        payload["options"] = options
+    return payload
+
+
+def _sync_files(files):
+    cleaned = []
+    for item in files or []:
+        if not isinstance(item, dict):
+            continue
+        entry = {}
+        for field in ("id", "type", "url"):
+            if item.get(field) not in (None, ""):
+                entry[field] = item[field]
+        if entry.get("url") or entry.get("id"):
+            cleaned.append(entry)
+    return cleaned
+
+
+def _sync_options(options):
+    cleaned = []
+    for item in options or []:
+        if isinstance(item, dict) and item.get("id") and item.get("value") is not None:
+            cleaned.append({"id": item["id"], "value": item["value"]})
+    return cleaned
+
+
+def _variant_sort_key(variant):
+    identity = _variant_identity(variant)
+    if identity is None:
+        return (2, 0, 0, 0)
+    kind, size = identity
+    return (1 if kind == "framed" else 0, size[0] * size[1], size[0], size[1])
+
+
+def _printful_sync_product_id(product):
+    product_id = (product.get("sync_product") or {}).get("id")
+    if product_id is not None:
+        return product_id
+    for variant in product.get("sync_variants") or []:
+        if variant.get("sync_product_id") is not None:
+            return variant["sync_product_id"]
+    return None
+
+
+def _variant_identity(variant):
+    external = variant.get("external_id") or ""
+    parts = external.rsplit(":", 2)
+    if len(parts) != 3 or parts[1] not in ("poster", "framed"):
+        return None
+    size = _size_pair(parts[2])
+    if not size:
+        return None
+    return parts[1], tuple(sorted(size))
+
+
+def _variant_size(variant):
+    identity = _variant_identity(variant)
+    if identity is None:
+        return None
+    return identity[1]
+
+
+def _overwrite_printful_prices(product):
+    for variant in product.get("sync_variants") or []:
+        price = _price_for_sync_variant(variant)
+        sync_id = variant.get("id")
+        if not price or sync_id is None:
+            continue
+        if _money(variant.get("retail_price")) == price:
+            continue
+        updated = _printful_request(
+            "PUT",
+            f"/store/variants/{sync_id}",
+            {"retail_price": price},
+        )
+        if not isinstance(updated, dict):
+            print(f"printful price update failed for variant {sync_id}")
+            continue
+        variant["retail_price"] = _money(updated.get("retail_price")) or price
+
+
+def _listed_price(kind, width_in, height_in):
+    group = "framed" if kind == "framed" else "unframed"
+    table = PRICING.get(group) or {}
+    amount = table.get((width_in, height_in))
+    if amount is None:
+        amount = table.get((height_in, width_in))
+    return _money(amount) or None
+
+
+def _price_for_sync_variant(variant):
+    external = variant.get("external_id") or ""
+    parts = external.rsplit(":", 2)
+    if len(parts) != 3 or parts[1] not in ("poster", "framed"):
+        return None
+    size = _size_pair(parts[2])
+    if not size:
+        return None
+    return _listed_price(parts[1], *size)
+
+
+def _size_pair(value):
+    normalized = _normalize_size(value)
+    if "x" not in normalized:
+        return None
+    width, height = normalized.split("x", 1)
+    return _size_key(width), _size_key(height)
+
+
+def _size_key(part):
+    number = float(part)
+    if number.is_integer():
+        return int(number)
+    return number
+
+
+def _money(value):
+    if value is None or value == "":
+        return ""
+    try:
+        return f"{float(value):.2f}"
+    except (TypeError, ValueError):
+        return ""
+
+
 def _catalog_variants(product_id):
     cached = _printful_catalog.get(product_id)
     if cached is not None:
         return cached
     payload = _printful_request("GET", f"/products/{product_id}")
-    variants = payload.get("variants") if payload else None
-    _printful_catalog[product_id] = variants or []
-    return _printful_catalog[product_id]
+    variants = payload.get("variants") if isinstance(payload, dict) else None
+    # A failed read must not stick: the next photo would then sync no sizes.
+    if not variants:
+        return []
+    _printful_catalog[product_id] = variants
+    return variants
 
 
 def _match_catalog_variant(catalog, width_in, height_in, frame_color):
@@ -908,19 +1178,6 @@ def _size_number(part):
     return format(number, "f").rstrip("0").rstrip(".")
 
 
-def _retail_price(catalog, variant_id):
-    cost = 0.0
-    for variant in catalog:
-        if variant.get("id") == variant_id:
-            try:
-                cost = float(variant.get("price") or 0)
-            except (TypeError, ValueError):
-                cost = 0.0
-            break
-    retail = math.ceil(cost * RETAIL_MARKUP * 100) / 100
-    return f"{retail:.2f}"
-
-
 def _print_offerings(result):
     offerings = []
     for variant in result.get("sync_variants") or []:
@@ -936,7 +1193,15 @@ def _print_offerings(result):
                 "variant_id": product.get("variant_id") or variant.get("variant_id"),
             }
         )
+    offerings.sort(key=_offering_sort_key)
     return offerings
+
+
+def _offering_sort_key(offering):
+    label = offering.get("label") or ""
+    framed = 1 if "framed" in label.lower() else 0
+    size = _size_pair(label) or (0, 0)
+    return (framed, size[0] * size[1], size[0], size[1])
 
 
 def _offering_label(variant):
@@ -983,18 +1248,37 @@ def _printful_request(method, path, payload=None, unwrap=True):
         headers=headers,
         method=method,
     )
-    try:
-        with urllib.request.urlopen(request, timeout=20) as response:
-            raw = response.read().decode("utf-8")
-    except urllib.error.HTTPError as err:
-        detail = err.read().decode("utf-8", errors="replace")
-        if err.code == 404 and method == "GET":
+    # Sync-product writes share a limit of about 10 per minute. A 429 is a
+    # wait, and the same request succeeds once the window opens.
+    waited = 0.0
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            with urllib.request.urlopen(request, timeout=20) as response:
+                raw = response.read().decode("utf-8")
+            break
+        except urllib.error.HTTPError as err:
+            detail = err.read().decode("utf-8", errors="replace")
+            if err.code == 404 and method == "GET":
+                return None
+            delay = _retry_delay(err, attempt)
+            if err.code in (429, 500, 502, 503, 504) and attempt < 3 and waited + delay <= 70:
+                print(f"printful {method} {path} waiting {delay:.0f}s after {err.code}")
+                time.sleep(delay)
+                waited += delay
+                continue
+            print(f"printful {method} {path} failed: {err.code} {detail}")
             return None
-        print(f"printful {method} {path} failed: {err.code} {detail}")
-        return None
-    except urllib.error.URLError as err:
-        print(f"printful {method} {path} failed: {err}")
-        return None
+        except urllib.error.URLError as err:
+            delay = min(2 ** attempt, 8)
+            if attempt < 3 and waited + delay <= 70:
+                print(f"printful {method} {path} waiting {delay:.0f}s after {err}")
+                time.sleep(delay)
+                waited += delay
+                continue
+            print(f"printful {method} {path} failed: {err}")
+            return None
     if not raw:
         return {}
     try:
@@ -1004,6 +1288,18 @@ def _printful_request(method, path, payload=None, unwrap=True):
     if not unwrap:
         return parsed
     return parsed.get("result", parsed)
+
+
+def _retry_delay(err, attempt):
+    headers = getattr(err, "headers", None)
+    raw = headers.get("Retry-After") if headers is not None and hasattr(headers, "get") else None
+    try:
+        delay = float(raw)
+    except (TypeError, ValueError):
+        delay = min(2 ** attempt, 30)
+    if delay < 0:
+        delay = 0
+    return min(delay, 60)
 
 
 def _store_id():
