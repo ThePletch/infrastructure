@@ -1,8 +1,3 @@
-variable "base_domain" {
-  description = "Root domain name for primary resources to be hosted under"
-  type        = string
-}
-
 variable "aws_region" {
   type = string
 }
@@ -32,7 +27,7 @@ variable "mxroute" {
 
 variable "mxroute_credentials" {
   type = object({
-    api_key = string
+    api_key      = string
     api_username = string
   })
 }
@@ -77,10 +72,10 @@ variable "sites" {
 
 variable "photo_site" {
   type = object({
-    subdomain = string
-    base_domain = string
-    contact_email  = string
-    photo_prefix   = string
+    subdomain     = string
+    base_domain   = string
+    contact_email = string
+    photo_prefix  = string
   })
 }
 

@@ -3,7 +3,7 @@ variable "incoming_domain" {
 }
 
 variable "zone_id" {
-  type = string
+  type        = string
   description = "Route53 zone ID for the domain under var.incoming_domain"
 }
 
@@ -17,17 +17,17 @@ variable "forwarder_email" {
 }
 
 variable "reject_spam" {
-  type = bool
+  type        = bool
   description = <<DESC
     Reject spam at the forwarder level. Reversing false positives is difficult,
     so this is usually only a good idea if your client has no spam filter.
   DESC
-  default = false
+  default     = false
 }
 
 variable "inbox_destinations" {
-  type = map(list(string))
-  default = {}
+  type        = map(list(string))
+  default     = {}
   description = <<DESC
     Map from inbox names, e.g. "foo" for "foo@mysite.biz",
     to destination email addresses (in full).
@@ -35,8 +35,8 @@ variable "inbox_destinations" {
 }
 
 variable "inbox_prefix_destinations" {
-  type = map(list(string))
-  default = {}
+  type        = map(list(string))
+  default     = {}
   description = <<DESC
     Map from string prefixes to destination email addresses in full.
     e.g. "foo-" catches emails to "foo-bar@mysite.biz" and "foo-a@mysite.biz"
@@ -48,6 +48,6 @@ variable "inbox_prefix_destinations" {
 }
 
 variable "catch_all_destinations" {
-  type = list(string)
+  type        = list(string)
   description = "Destination for emails that don't match any other mappings."
 }

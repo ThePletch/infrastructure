@@ -1,0 +1,39 @@
+# Validate Terraform and fail when fmt would rewrite files.
+
+name: Terraform Validation
+
+on:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: "1.14.0"
+          # The default wrapper always exits 0, which would hide fmt -check failures.
+          terraform_wrapper: false
+
+      - name: Check formatting
+        run: terraform fmt -check -diff -recursive
+
+      - name: Init
+        working-directory: main
+        run: terraform init -backend=false -input=false
+
+      - name: Validate
+        working-directory: main
+        run: terraform validate -no-color
+
+      - uses: terraform-linters/setup-tflint@v6
+        with:
+          tflint_version: "0.65.0"
+
+      - name: Lint
+        run: tflint --recursive --format compact

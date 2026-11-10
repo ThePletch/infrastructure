@@ -19,6 +19,8 @@ override.tf.json
 
 modules/*/files
 __pycache__
+.pytest_cache
+.venv
 
 static-sites/*/node_modules
 static-sites/*/dist

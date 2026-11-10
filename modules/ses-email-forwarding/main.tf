@@ -1,6 +1,5 @@
 locals {
-  maildump_bucket_name = "${var.incoming_domain}-maildump"
-  namified_domain      = replace(var.incoming_domain, "/\\./", "-")
+  namified_domain = replace(var.incoming_domain, "/\\./", "-")
 }
 
 data "aws_caller_identity" "current" {}
@@ -42,11 +41,11 @@ module "forwarder" {
 
   environment_config = {
     ForwardingConfigPrefix = local.parameter_path_prefix
-    MailS3Bucket  = aws_s3_bucket.maildump.bucket
-    MailS3Prefix  = var.bucket_prefix
-    MailSender    = var.forwarder_email
-    Region        = data.aws_region.current.name
-    RejectSpam    = var.reject_spam ? "true" : null
+    MailS3Bucket           = aws_s3_bucket.maildump.bucket
+    MailS3Prefix           = var.bucket_prefix
+    MailSender             = var.forwarder_email
+    Region                 = data.aws_region.current.name
+    RejectSpam             = var.reject_spam ? "true" : null
   }
 
   memory_mb = 512
