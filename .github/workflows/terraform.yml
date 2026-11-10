@@ -1,6 +1,6 @@
 # Validate Terraform and fail when fmt would rewrite files.
 
-name: Terraform
+name: Terraform Validation
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  terraform:
+  validation:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
