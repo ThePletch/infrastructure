@@ -26,7 +26,7 @@ variable "handler_function_name" {
 }
 
 variable "layer_arns" {
-  type = list(string)
+  type    = list(string)
   default = []
 }
 

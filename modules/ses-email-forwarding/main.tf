@@ -42,11 +42,11 @@ module "forwarder" {
 
   environment_config = {
     ForwardingConfigPrefix = local.parameter_path_prefix
-    MailS3Bucket  = aws_s3_bucket.maildump.bucket
-    MailS3Prefix  = var.bucket_prefix
-    MailSender    = var.forwarder_email
-    Region        = data.aws_region.current.name
-    RejectSpam    = var.reject_spam ? "true" : null
+    MailS3Bucket           = aws_s3_bucket.maildump.bucket
+    MailS3Prefix           = var.bucket_prefix
+    MailSender             = var.forwarder_email
+    Region                 = data.aws_region.current.name
+    RejectSpam             = var.reject_spam ? "true" : null
   }
 
   memory_mb = 512
