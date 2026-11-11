@@ -28,6 +28,7 @@ module "photo_site" {
   github_actions_repository = var.github_actions_repository
   photo_prefix              = var.photo_site.photo_prefix
   printful_api_key          = var.printful_api_key
+  printful_shop_api_key     = var.printful_shop_api_key
   stripe                    = var.stripe
 }
 

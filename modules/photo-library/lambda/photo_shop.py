@@ -115,7 +115,7 @@ def _create_printful_order(session):
     if not recipient:
         print("stripe session missing shipping address")
         return None
-    external_id = session.get("id") or ""
+    external_id = _order_external_id(session.get("id") or "")
     if external_id:
         existing = _printful_request(
             "GET", f"/orders/@{urllib.parse.quote(external_id, safe='')}"
@@ -124,11 +124,24 @@ def _create_printful_order(session):
             return existing
     payload = {
         "external_id": external_id,
-        "confirm": True,
         "recipient": recipient,
         "items": [{"sync_variant_id": variant_id, "quantity": 1}],
     }
-    return _printful_request("POST", "/orders", payload)
+    # confirm is a query parameter. A body field is ignored and the order stays a draft.
+    return _printful_request("POST", "/orders?confirm=true", payload)
+
+
+def _order_external_id(session_id):
+    # Printful rejects an external id longer than 32 characters or containing
+    # anything other than letters, digits, dashes, and underscores. A Checkout
+    # Session id is longer than that, so those are stored as a stable hash.
+    if session_id and len(session_id) <= 32 and all(
+        character.isalnum() or character in "-_" for character in session_id
+    ):
+        return session_id
+    if not session_id:
+        return ""
+    return hashlib.sha256(session_id.encode("utf-8")).hexdigest()[:32]
 
 
 def _recipient(session):

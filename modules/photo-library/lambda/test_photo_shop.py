@@ -198,7 +198,8 @@ def test_webhook_creates_printful_order(configured, monkeypatch):
     def opener(request, timeout=20):
         if request.method == "GET" and "/orders/" in request.full_url:
             raise _http_error(404)
-        if request.method == "POST" and request.full_url.endswith("/orders"):
+        if request.method == "POST" and "/orders?" in request.full_url:
+            posted["url"] = request.full_url
             posted["body"] = json.loads(request.data.decode())
             return _Response(json.dumps({"result": {"id": 99}}).encode())
         raise AssertionError(request.full_url)
@@ -220,10 +221,48 @@ def test_webhook_creates_printful_order(configured, monkeypatch):
 
     assert response["statusCode"] == 200
     assert json.loads(response["body"]) == {"received": True}
+    assert posted["url"].endswith("/orders?confirm=true")
     assert posted["body"]["external_id"] == "cs_test_1"
-    assert posted["body"]["confirm"] is True
+    assert "confirm" not in posted["body"]
     assert posted["body"]["items"] == [{"sync_variant_id": 42, "quantity": 1}]
     assert posted["body"]["recipient"]["zip"] == "02110"
+
+
+def test_webhook_hashes_long_session_ids(configured, monkeypatch):
+    session = _completed_session()
+    session["id"] = "cs_live_" + ("a" * 58)
+    posted = {}
+    looked_up = []
+
+    def opener(request, timeout=20):
+        if request.method == "GET" and "/orders/" in request.full_url:
+            looked_up.append(request.full_url)
+            raise _http_error(404)
+        if request.method == "POST" and "/orders?" in request.full_url:
+            posted["body"] = json.loads(request.data.decode())
+            return _Response(json.dumps({"result": {"id": 99}}).encode())
+        raise AssertionError(request.full_url)
+
+    monkeypatch.setattr(photo_shop.urllib.request, "urlopen", opener)
+    payload = json.dumps(
+        {"type": "checkout.session.completed", "data": {"object": session}}
+    ).encode()
+
+    response = photo_shop.lambda_handler(
+        _event(
+            "/webhooks/stripe",
+            "POST",
+            payload.decode(),
+            {"stripe-signature": _stripe_header(payload)},
+        ),
+        None,
+    )
+
+    external_id = hashlib.sha256(session["id"].encode()).hexdigest()[:32]
+    assert response["statusCode"] == 200
+    assert posted["body"]["external_id"] == external_id
+    assert len(external_id) == 32
+    assert looked_up[0].endswith("/orders/@" + external_id)
 
 
 def test_webhook_ignores_unrelated_events(configured, monkeypatch):

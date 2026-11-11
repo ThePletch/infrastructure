@@ -83,7 +83,14 @@ variable "printful_api_key" {
   type        = string
   default     = ""
   sensitive   = true
-  description = "Printful API token for photo libraries. Leave empty until print listings are enabled."
+  description = "Printful API token for the photo indexer. Leave empty until print listings are enabled."
+}
+
+variable "printful_shop_api_key" {
+  type        = string
+  default     = ""
+  sensitive   = true
+  description = "Printful API token for the shop Lambda. Used to read variants and place orders."
 }
 
 variable "stripe" {

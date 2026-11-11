@@ -41,6 +41,7 @@ type GalleryState = {
   tag: string | null;
 };
 
+const noticeEl = mustQuery<HTMLElement>("#notice");
 const statusEl = mustQuery<HTMLElement>("#status");
 const gridEl = mustQuery<HTMLElement>("#grid");
 const tagsEl = mustQuery<HTMLElement>("#tags");
@@ -499,19 +500,9 @@ function checkoutUrl(payload: unknown): string | null {
   return typeof payload.url === "string" ? payload.url : null;
 }
 
-function checkoutNotice(): void {
-  const params = new URLSearchParams(window.location.search);
-  if (params.get("checkout") !== "success") {
-    return;
-  }
-  params.delete("checkout");
-  const query = params.toString();
-  history.replaceState(
-    readState(),
-    "",
-    query ? `${window.location.pathname}?${query}` : window.location.pathname,
-  );
-  setStatus("Thanks — your print is in production.");
+function showNotice(message: string): void {
+  noticeEl.hidden = false;
+  noticeEl.textContent = message;
 }
 
 function onKeydown(event: KeyboardEvent): void {
@@ -629,8 +620,12 @@ window.addEventListener("popstate", () => applyState(readState(), false));
 
 loadPhotos()
   .then(() => {
+    const checkoutSucceeded =
+      new URLSearchParams(window.location.search).get("checkout") === "success";
     applyState(readState(), false);
-    checkoutNotice();
+    if (checkoutSucceeded) {
+      showNotice("Thank you! Your print is in production.");
+    }
   })
   .catch(() => {
     photos = [];

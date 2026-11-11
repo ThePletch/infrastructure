@@ -169,7 +169,7 @@ module "photo_shop" {
       SITE_ORIGIN    = local.site_origin
       SHIPPING_CENTS = "1200"
     },
-    var.printful_api_key != "" ? { PRINTFUL_API_TOKEN = var.printful_api_key } : {},
+    var.printful_shop_api_key != "" ? { PRINTFUL_API_TOKEN = var.printful_shop_api_key } : {},
     var.printful_store_id != "" ? { PRINTFUL_STORE_ID = var.printful_store_id } : {},
     var.stripe.secret_key != "" ? { STRIPE_SECRET_KEY = var.stripe.secret_key } : {},
     var.stripe.webhook_secret != "" ? { STRIPE_WEBHOOK_SECRET = var.stripe.webhook_secret } : {},

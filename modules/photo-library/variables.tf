@@ -38,7 +38,14 @@ variable "printful_api_key" {
   type        = string
   default     = ""
   sensitive   = true
-  description = "Printful API token used to create poster listings on upload."
+  description = "Printful API token used by the indexer to create poster listings on upload."
+}
+
+variable "printful_shop_api_key" {
+  type        = string
+  default     = ""
+  sensitive   = true
+  description = "Printful API token used by the shop Lambda to read variants and place orders."
 }
 
 variable "printful_store_id" {
