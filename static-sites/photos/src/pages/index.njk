@@ -1,22 +1,12 @@
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Astrophotography by Shay Pletcher</title>
-    <link rel="stylesheet" href="/assets/styles.css" />
-  </head>
-  <body>
-    <header class="site-header">
-      <p class="wordmark">Shay takes space pictures</p>
-      <p class="wordmark">astrophotography if you're fancy</p>
-      <nav class="site-nav" aria-label="Site">
-        <a href="/" aria-current="page">gallery</a>
-        <a href="/contact.html">displaying my work</a>
-      </nav>
+{% extends "templates/layout.njk" %}
+{% set active = "home" %}
+
+{% block intro %}
       <p>i've been taking pictures of space in my backyard in boston since 2023. here's a few.</p>
       <p>you can buy a print if you want. all profits above printing costs go to the <a href="https://gazasoupkitchen.org/"><u>gaza soup kitchen</u></a>, not to some nerd.</p>
-    </header>
+{%- endblock %}
+
+{% block content %}
     <p id="notice" class="notice" role="status" hidden></p>
     <nav id="tags" class="tags" hidden></nav>
     <p id="status" class="status" hidden></p>
@@ -59,5 +49,4 @@
       <p class="status">JavaScript is required to load the gallery.</p>
     </noscript>
     <script src="/assets/main.js" defer></script>
-  </body>
-</html>
+{%- endblock %}

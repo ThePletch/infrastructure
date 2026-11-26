@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{% if pageTitle %}{{ pageTitle }} — {% endif %}Shay's astrophotography</title>
+    <link rel="stylesheet" href="/assets/styles.css" />
+  </head>
+  <body>
+    {% set nav = [
+      { href: "/", label: "gallery", id: "home" },
+      { href: "/contact.html", label: "displaying my work", id: "contact" }
+    ] -%}
+    <header class="site-header">
+      <p class="wordmark">{% if active == "home" %}Shay takes space pictures{% else %}<a href="/">Shay takes space pictures</a>{% endif %}</p>
+      <p class="wordmark">astrophotography if you're fancy</p>
+      <nav class="site-nav" aria-label="Site">
+        {%- for item in nav %}
+        <a href="{{ item.href }}"{% if active == item.id %} aria-current="page"{% endif %}>{{ item.label }}</a>
+        {%- endfor %}
+      </nav>
+      {%- block intro %}{% endblock %}
+    </header>
+    {%- block content %}{% endblock %}
+  </body>
+</html>

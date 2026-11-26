@@ -9,10 +9,9 @@ import {
   rmSync,
   statSync,
 } from "node:fs";
-import { extname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { extname, join } from "node:path";
+import { compilePages, copyAssets, root } from "./static.mjs";
 
-const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const dist = join(root, "dist");
 const samples = join(root, "sample-photos");
 const port = 8765;
@@ -98,12 +97,8 @@ function loadPhotos() {
 }
 
 function copyStatic() {
-  mkdirSync(join(dist, "assets"), { recursive: true });
-  copy(join(root, "index.html"), join(dist, "index.html"));
-  copy(join(root, "error.html"), join(dist, "error.html"));
-  copy(join(root, "contact.html"), join(dist, "contact.html"));
-  copy(join(root, "cropped_final.jpg"), join(dist, "cropped_final.jpg"));
-  copy(join(root, "src/styles.css"), join(dist, "assets/styles.css"));
+  compilePages(dist);
+  copyAssets(dist);
   loadPhotos();
 }
 
